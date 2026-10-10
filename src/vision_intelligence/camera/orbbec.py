@@ -11,7 +11,7 @@ from pyorbbecsdk import (
     OBFrameAggregateOutputMode,
 )
 
-from utils import frame_to_bgr_image
+from vision_intelligence.camera.frame_utils import frame_to_bgr_image
 
 
 class Camera:

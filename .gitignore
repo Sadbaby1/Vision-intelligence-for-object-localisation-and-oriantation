@@ -8,3 +8,13 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Orbbec SDK logs
+Log/
+
+# Local data, model weights and run outputs
+data/
+models/
+outputs/
+*.pt
+*.onnx

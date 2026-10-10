@@ -1,10 +1,17 @@
 [project]
-name = "flodingf"
+name = "vision-intelligence"
 version = "0.1.0"
-description = "Add your description here"
+description = "Object detection, localisation and orientation estimation with an Orbbec RGB-D camera"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "opencv-python>=5.0.0.93",
     "pyorbbecsdk2>=2.1.2",
 ]
+
+[project.scripts]
+vision-intelligence = "vision_intelligence.app:main"
+
+[build-system]
+requires = ["uv_build>=0.13.0,<0.14.0"]
+build-backend = "uv_build"

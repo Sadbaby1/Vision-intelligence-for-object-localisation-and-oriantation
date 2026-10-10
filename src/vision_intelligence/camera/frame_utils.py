@@ -140,7 +140,6 @@ def frame_to_bgr_image(frame: VideoFrame) -> Union[Optional[np.array], Any]:
         image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
     elif color_format == OBFormat.BGR:
         image = np.resize(data, (height, width, 3))
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     elif color_format == OBFormat.YUYV:
         image = np.resize(data, (height, width, 2))
         image = cv2.cvtColor(image, cv2.COLOR_YUV2BGR_YUYV)
