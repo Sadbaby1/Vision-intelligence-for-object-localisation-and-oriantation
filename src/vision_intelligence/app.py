@@ -26,7 +26,7 @@ def colorize_depth(depth_mm):
     return vis
 
 
-def process_frame(frame, depth_frame, model_path):
+def process_frame(frame, model_path):
     """Process a single frame from the Orbbec camera."""
 
     calibrator = ArucoCalibrator(marker_length_mm=100)
@@ -95,7 +95,8 @@ def main():
                 continue
             color_frame, depth_frame = result
             # sadate code
-
+            run_model = process_frame(color_frame, model_path="best.pt")
+            
             if not intrinsics_printed:
                 k = orbbec.intrinsics
                 print(
