@@ -26,32 +26,27 @@ def colorize_depth(depth_mm):
     return vis
 
 
-def process_frame(frame, model_path):
+def process_frame(frame, calibrator, detector):
     """Process a single frame from the Orbbec camera."""
-
-    calibrator = ArucoCalibrator(marker_length_mm=100)
-
-    # Load a pretrained YOLOv11 model
-    detector = Detector(model_path=model_path)
 
     # Find ArUco markers and calculate pixel-to-mm ratio
     bbox, ids = calibrator.find_markers(frame)
     ratio = calibrator.calculate_ratio(bbox)
-
-    if ratio is None:
-        print("No marker detected.")
-
-    print(f"Pixel-to-mm ratio: {ratio:.4f} pixels/mm")
-
     # Get marker's pixel center and build the transformer for this frame
     marker_center = calibrator.get_marker_center(bbox)
+
+    # Run YOLOv8 detection on the frame
+    detected_objects = detector.detect(frame)
+
+    if ratio is None or marker_center is None:
+        print("No marker detected.")
+        return
+
+    print(f"Pixel-to-mm ratio: {ratio:.4f} pixels/mm")
 
     transformer = CoordinateTransformer(
         marker_world_x=148.5, marker_world_y=210, pixel_mm_ratio=ratio
     )
-
-    # Run YOLOv8 detection on the frame
-    detected_objects = detector.detect(frame)
 
     # center of detected ArUco marker in pixels
     marker_center = calibrator.get_marker_center(bbox)
@@ -82,6 +77,8 @@ def main():
     try:
         orbbec = Camera()
         orbbec.start()
+        calibrator = ArucoCalibrator(marker_length_mm=100)
+        detector = Detector(model_path="yolo11n.pt")
 
         cv.namedWindow(WINDOW)
         cv.setMouseCallback(WINDOW, on_mouse)
@@ -95,8 +92,8 @@ def main():
                 continue
             color_frame, depth_frame = result
             # sadate code
-            run_model = process_frame(color_frame, model_path="best.pt")
-            
+            process_frame(color_frame, calibrator, detector)
+
             if not intrinsics_printed:
                 k = orbbec.intrinsics
                 print(
