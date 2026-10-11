@@ -64,6 +64,41 @@ The 3D position is in the camera frame: X to the right, Y down, Z forward from t
 
 Glass, shiny or black surfaces, and anything closer than about 0.2 m, often have no depth. This is a limitation of the sensor, not a bug.
 
+## Capturing training images
+
+Use `vision-capture` to take colour + depth pictures for building a YOLO dataset:
+
+```
+uv run vision-capture                  # manual: press SPACE for each picture
+uv run vision-capture --interval 2     # also allows auto mode: press 'a' to take a picture every 2 s
+uv run vision-capture --out D:\datasets\captures   # save somewhere else
+```
+
+| Key | Effect |
+|---|---|
+| `SPACE` | Take a picture |
+| `a` | Toggle automatic capture (needs `--interval`) |
+| `q` | Quit |
+
+The preview shows colour and depth side by side. The screen flashes briefly each time a picture is saved.
+
+Each run creates a new session folder (default `data/captures/`, which is not committed to git):
+
+```
+data/captures/20261010_142501/
+├── color/20261010_142501_0001.png   # colour image: use these for labelling / YOLO training
+├── depth/20261010_142501_0001.png   # 16-bit depth in mm, aligned to the colour image (0 = no depth)
+└── intrinsics.json                  # camera intrinsics for this session
+```
+
+Colour and depth files with the same name were taken at the same moment. To read a depth image in Python:
+
+```python
+depth_mm = cv2.imread("depth/20261010_142501_0001.png", cv2.IMREAD_UNCHANGED)  # uint16, mm
+```
+
+Tips for a good dataset: vary object position, rotation, distance (about 0.4–1.5 m), background and lighting, and include several objects in the same picture.
+
 ## Troubleshooting
 
 | Problem | Fix |
@@ -79,6 +114,8 @@ Glass, shiny or black surfaces, and anything closer than about 0.2 m, often have
 Vision-Intelligence/
 ├── src/vision_intelligence/
 │   ├── app.py                  # Main loop: live view, depth overlay, 3D readout
+│   ├── capture.py              # `vision-capture`: save colour + depth images for datasets
+│   ├── visualization.py        # Depth colouring and on-screen text helpers
 │   ├── __main__.py             # Enables `python -m vision_intelligence`
 │   ├── camera/
 │   │   ├── orbbec.py           # Camera: color + depth streams, depth aligned to color, intrinsics
@@ -90,7 +127,7 @@ Vision-Intelligence/
 │       └── coordinate.py       # Pixel + depth -> 3D point in the camera frame
 ├── experiments/                # Scratch scripts, not part of the package
 ├── tests/
-└── pyproject.toml              # Dependencies and the `vision-intelligence` command
+└── pyproject.toml              # Dependencies and the `vision-intelligence` / `vision-capture` commands
 ```
 
 ## Adding dependencies

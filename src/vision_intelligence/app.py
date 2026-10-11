@@ -1,22 +1,12 @@
 import cv2 as cv
-import numpy as np
 
 from vision_intelligence.camera import Camera
 from vision_intelligence.geometry.coordinate import deproject_pixel, depth_at
+from vision_intelligence.visualization import colorize_depth, put_text_lines
 
 WINDOW = "Vision Intelligence"
 MAX_DISPLAY_WIDTH = 1280
-DEPTH_VIS_RANGE_MM = (200, 3000)
 VIEWS = ("overlay", "color", "depth")
-
-
-def colorize_depth(depth_mm):
-    """Map depth to a JET colour image; pixels with no depth are drawn black."""
-    near, far = DEPTH_VIS_RANGE_MM
-    scaled = np.clip((depth_mm - near) / (far - near), 0, 1)
-    vis = cv.applyColorMap((scaled * 255).astype(np.uint8), cv.COLORMAP_JET)
-    vis[depth_mm <= 0] = 0
-    return vis
 
 
 def main():
@@ -78,10 +68,7 @@ def main():
             scale = min(1.0, MAX_DISPLAY_WIDTH / w)
             mouse["scale"] = scale
             display = cv.resize(frame, None, fx=scale, fy=scale) if scale < 1.0 else frame
-            for i, text in enumerate(lines):
-                org = (10, 25 + i * 25)
-                cv.putText(display, text, org, cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 4)
-                cv.putText(display, text, org, cv.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+            put_text_lines(display, lines)
 
             cv.imshow(WINDOW, display)
             key = cv.waitKey(1) & 0xFF

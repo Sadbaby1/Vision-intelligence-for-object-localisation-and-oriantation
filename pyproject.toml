@@ -11,6 +11,11 @@ dependencies = [
 
 [project.scripts]
 vision-intelligence = "vision_intelligence.app:main"
+vision-capture = "vision_intelligence.capture:main"
+vision-capture-frame = "vision_intelligence.capture:main_frame"
+vision-capture-filter = "vision_intelligence.capture:main_filter"
+vision-capture-assembled = "vision_intelligence.capture:main_assembled"
+vision-capture-completed = "vision_intelligence.capture:main_completed"
 
 [build-system]
 requires = ["uv_build>=0.13.0,<0.14.0"]
