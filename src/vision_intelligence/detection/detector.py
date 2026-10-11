@@ -27,7 +27,7 @@ class Detector:
                 confidence = box.conf[0].item()
 
                 # Only consider detections with confidence above a threshold (e.g., 0.5)
-                if confidence > 0.5:
+                if confidence > 0.3:
                     label = self.model.names[class_id]
                     x1, y1, x2, y2 = map(int, box.xyxy[0])
 

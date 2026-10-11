@@ -78,7 +78,7 @@ def main():
         orbbec = Camera()
         orbbec.start()
         calibrator = ArucoCalibrator(marker_length_mm=100)
-        detector = Detector(model_path="yolo11n.pt")
+        detector = Detector(model_path="best.pt")
 
         cv.namedWindow(WINDOW)
         cv.setMouseCallback(WINDOW, on_mouse)
