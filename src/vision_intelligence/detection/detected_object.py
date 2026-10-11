@@ -7,6 +7,7 @@ class DetectedObject:
 
     def __init__(self, label, bbox, confidence, orientation=None):
         self.label = label  # shape name (e.g. "filter", "frame"
+        self.bbox = bbox  # (x1, y1, x2, y2) in pixels
         self.confidence = confidence  # detection confidence score
         self.orientation = orientation  # angle in degrees, set later
         self.world_x = None  # filled in by coordinate_transform.py

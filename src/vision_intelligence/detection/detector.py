@@ -13,7 +13,8 @@ class Detector:
     def __init__(self, model_path="yolov11n.pt"):
 
         self.model = YOLO(model_path)
-        
+        print("Loaded model classes:", self.model.names)
+        self.orientation_estimator = OrientationEstimator()
 
     def detect(self, frame):
         results = self.model.predict(frame)
