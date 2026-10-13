@@ -1,0 +1,9 @@
+# Run training from the repository root (Vision-Intelligence/).
+path: data/datasets/rgb
+train: images/train
+val: images/val
+test: images/test
+channels: 3
+names:
+  0: filter
+  1: frame

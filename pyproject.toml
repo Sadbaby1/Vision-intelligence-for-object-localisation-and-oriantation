@@ -7,6 +7,9 @@ requires-python = ">=3.13"
 dependencies = [
     "opencv-python>=5.0.0.93",
     "pyorbbecsdk2>=2.1.2",
+    "torch>=2.11.0",
+    "torchvision>=0.26.0",
+    "ultralytics>=8.4.176",
 ]
 
 [project.scripts]
@@ -16,6 +19,17 @@ vision-capture-frame = "vision_intelligence.capture:main_frame"
 vision-capture-filter = "vision_intelligence.capture:main_filter"
 vision-capture-assembled = "vision_intelligence.capture:main_assembled"
 vision-capture-completed = "vision_intelligence.capture:main_completed"
+
+# CUDA build of PyTorch on Windows/Linux (the default PyPI wheel is CPU-only on Windows).
+# macOS has no CUDA builds and uses the normal PyPI wheel (CPU / Apple GPU).
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu128", marker = "sys_platform == 'win32' or sys_platform == 'linux'" }]
+torchvision = [{ index = "pytorch-cu128", marker = "sys_platform == 'win32' or sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
 
 [build-system]
 requires = ["uv_build>=0.13.0,<0.14.0"]

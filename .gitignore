@@ -13,8 +13,11 @@ wheels/
 Log/
 
 # Local data, model weights and run outputs
-data/
-models/
 outputs/
-*.pt
 *.onnx
+/data_check
+METHODOLOGY.md
+session.py
+prepare_labeling.py
+depth.py
+auto_label.py

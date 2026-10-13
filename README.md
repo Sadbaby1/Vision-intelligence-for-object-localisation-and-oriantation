@@ -2,7 +2,7 @@
 
 Object detection, localisation and orientation estimation using an Orbbec Gemini 2 RGB-D camera.
 
-**Current status:** the camera pipeline is working. The app streams colour and depth (depth aligned to the colour image, in mm) and shows the 3D position of any pixel under the mouse. Object detection and orientation estimation are not implemented yet.
+**Current status:** the camera pipeline is working. The app streams colour and depth (depth aligned to the colour image, in mm) and shows the 3D position of any pixel under the mouse. A YOLO-OBB detector for filters and frames can be trained on a labelled RGB dataset; 3D localisation and orientation from the detections are not implemented yet.
 
 ## Requirements
 
@@ -10,6 +10,7 @@ Object detection, localisation and orientation estimation using an Orbbec Gemini
 - Python 3.13
 - [uv](https://docs.astral.sh/uv/) (package and environment manager)
 - Orbbec Gemini 2 camera connected to a **USB 3.0** port
+- For training: an NVIDIA GPU is strongly recommended (tested on an RTX 4070 Laptop GPU, 8 GB)
 
 ## Installation
 
@@ -35,6 +36,12 @@ Object detection, localisation and orientation estimation using an Orbbec Gemini
    ```
 
    This creates `.venv/` and installs everything listed in `pyproject.toml` (OpenCV, Orbbec SDK, and the project itself). Do not copy `.venv/` between computers; run `uv sync` on each machine instead.
+
+### Where files are read and written
+
+All commands find the project folder automatically (the folder with this `pyproject.toml`), so they work from any directory and on any machine; default data, model and output paths are always inside the project. Paths stored in `data/datasets/index.csv` are relative to the project folder. To use a different location, set the environment variable `VISION_INTELLIGENCE_ROOT`, e.g. in PowerShell `$env:VISION_INTELLIGENCE_ROOT = "D:\vision-data"`. Paths you pass on the command line (e.g. `--out`) are relative to your current folder.
+
+On Windows and Linux, `uv sync` installs PyTorch with CUDA 12.8 (NVIDIA GPU); on macOS it installs the standard build, and training uses the Apple GPU (`mps`) or CPU.
 
 ## Running
 
@@ -98,6 +105,55 @@ depth_mm = cv2.imread("depth/20261010_142501_0001.png", cv2.IMREAD_UNCHANGED)  #
 ```
 
 Tips for a good dataset: vary object position, rotation, distance (about 0.4–1.5 m), background and lighting, and include several objects in the same picture.
+
+## Training the detector
+
+Trains Ultralytics YOLO-OBB (`yolo11n-obb`) on a labelled dataset. Training uses the NVIDIA GPU automatically if one is available (PyTorch is installed with CUDA 12.8 by `uv sync`).
+
+Expected dataset layout (YOLO OBB labels, `0 = filter`, `1 = frame`):
+
+```
+data/datasets/rgb/
+├── images/{train,val,test}/   # .png colour images
+└── labels/{train,val,test}/   # .txt label files, same base names as the images
+```
+
+Train:
+
+```
+uv run python -m vision_intelligence train                   # RGB model, seed 0
+uv run python -m vision_intelligence train --seeds 0 1 2     # three runs with different seeds
+uv run python -m vision_intelligence train --variant rgbd    # RGB-D model (needs data/datasets/rgbd, see METHODOLOGY.md Phase 2)
+```
+
+Settings (same for RGB and RGB-D, defined in `COMMON` in `src/vision_intelligence/detection/train.py`): 100 epochs, image size 1280, batch 8, early stop after 30 epochs without improvement, colour (HSV) augmentation off. `--epochs`, `--imgsz` and `--batch` exist for quick tests only; never change them between the RGB and RGB-D model.
+
+Output:
+
+```
+data/datasets/rgb.yaml                 # dataset config written by the script
+model/pretrained/yolo11n-obb.pt        # pretrained start, downloaded on first run
+model/rgb_s0/weights/best.pt           # trained model (best validation mAP); use this for prediction
+model/rgb_s0/weights/last.pt           # model after the last epoch
+model/rgb_s0/results.csv, *.png        # training curves, confusion matrix, example predictions
+```
+
+## Live detection test
+
+Runs the trained model on the camera stream:
+
+```
+uv run python -m vision_intelligence detect                     # uses model/rgb_s0/weights/best.pt
+uv run python -m vision_intelligence detect --conf 0.3          # also show less confident detections
+uv run python -m vision_intelligence detect --weights model/rgbd_s0/weights/best.pt
+```
+
+| Key | Effect |
+|---|---|
+| `s` | Save a snapshot (raw colour + annotated image) to `outputs/live/` |
+| `q` | Quit |
+
+Each detection shows class, confidence, yaw (degrees, -90 to 90, 0 = along the image x axis, positive = clockwise) and an approximate 3D centre in mm in the camera frame. The depth is taken at the box centre, so for a hollow frame it is the surface below the frame.
 
 ## Troubleshooting
 

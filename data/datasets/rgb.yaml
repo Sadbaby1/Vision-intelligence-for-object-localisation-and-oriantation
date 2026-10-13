@@ -1,0 +1,8 @@
+path: C:/KP/AI_and_Automation/Sem_2/PAI/Vision-Intelligence/data/datasets/rgb
+train: images/train
+val: images/val
+channels: 3
+names:
+  0: filter
+  1: frame
+test: images/test

@@ -20,11 +20,12 @@ from pathlib import Path
 import cv2 as cv
 import numpy as np
 
+from vision_intelligence import paths
 from vision_intelligence.camera import Camera
 from vision_intelligence.visualization import colorize_depth, put_text_lines
 
 WINDOW = "Vision Capture"
-DEFAULT_OUT_DIR = Path("data") / "captures"
+DEFAULT_OUT_DIR = paths.CAPTURES
 PREVIEW_SIZE = (640, 360)
 
 
@@ -70,13 +71,13 @@ class CaptureSession:
             "cy": k.cy,
             "depth_unit": "mm",
         }
-        (self.dir / "intrinsics.json").write_text(json.dumps(data, indent=2))
+        (self.dir / "intrinsics.json").write_text(json.dumps(data, indent=2), encoding="utf-8")
         self.intrinsics_saved = True
 
 
 def main(default_out=DEFAULT_OUT_DIR):
     parser = argparse.ArgumentParser(description="Capture colour + depth images for a training dataset.")
-    parser.add_argument("--out", type=Path, default=default_out, help="output folder (default: data/captures)")
+    parser.add_argument("--out", type=Path, default=default_out, help=f"output folder (default: {default_out})")
     parser.add_argument(
         "--interval",
         type=float,
