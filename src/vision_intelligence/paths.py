@@ -41,6 +41,7 @@ def find_project_root():
 ROOT = find_project_root()
 DATA = ROOT / "data"
 CAPTURES = DATA / "captures"
+ROBOFLOW = DATA / "roboflow"
 DATASETS = DATA / "datasets"
 PART_DIMENSIONS = DATA / "calibration" / "part_dimensions.json"
 MODEL = ROOT / "model"

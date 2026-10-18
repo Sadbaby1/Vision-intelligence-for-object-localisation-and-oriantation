@@ -1,0 +1,31 @@
+{
+  "run": "2026-10-16_v2/rgb_yolo11n-obb_s0",
+  "dataset": "2026-10-16_v2",
+  "data": "data/datasets/2026-10-16_v2/rgb/data.yaml",
+  "variant": "rgb",
+  "model": "yolo11n-obb",
+  "pretrained": "model/pretrained/yolo11n-obb.pt",
+  "seed": 0,
+  "classes": {
+    "0": "Air_Filter",
+    "1": "filter",
+    "2": "frame"
+  },
+  "channels": 3,
+  "imgsz": 1280,
+  "settings": {
+    "epochs": 200,
+    "imgsz": 1280,
+    "batch": 8,
+    "patience": 30,
+    "hsv_h": 0.0,
+    "hsv_s": 0.0,
+    "hsv_v": 0.0
+  },
+  "epochs_run": 169,
+  "best_epoch": 139,
+  "val_mAP50": 0.9875,
+  "val_mAP50_95": 0.9858,
+  "git_commit": "bc6bd21",
+  "created": "2026-10-18T23:37:10"
+}

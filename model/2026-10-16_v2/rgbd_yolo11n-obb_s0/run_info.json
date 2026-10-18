@@ -1,0 +1,43 @@
+{
+  "run": "2026-10-16_v2/rgbd_yolo11n-obb_s0",
+  "dataset": "2026-10-16_v2",
+  "data": "data/datasets/2026-10-16_v2/rgbd/data.yaml",
+  "variant": "rgbd",
+  "model": "yolo11n-obb",
+  "pretrained": "model/pretrained/yolo11n-obb.pt",
+  "seed": 0,
+  "classes": {
+    "0": "Air_Filter",
+    "1": "filter",
+    "2": "frame"
+  },
+  "channels": 4,
+  "imgsz": 1280,
+  "settings": {
+    "epochs": 200,
+    "imgsz": 1280,
+    "batch": 8,
+    "patience": 30,
+    "hsv_h": 0.0,
+    "hsv_s": 0.0,
+    "hsv_v": 0.0
+  },
+  "epochs_run": 159,
+  "best_epoch": 129,
+  "val_mAP50": 0.9875,
+  "val_mAP50_95": 0.9857,
+  "git_commit": "bc6bd21",
+  "created": "2026-10-19T00:24:19",
+  "rgbd_config": {
+    "function": "vision_intelligence.geometry.depth.local_height",
+    "kernel_px": 151,
+    "max_height_mm": 40.0,
+    "blur_px": 9,
+    "channel_order": [
+      "B",
+      "G",
+      "R",
+      "local_height"
+    ]
+  }
+}

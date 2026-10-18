@@ -1,7 +1,7 @@
 task: obb
 mode: train
 model: C:\KP\AI_and_Automation\Sem_2\PAI\Vision-Intelligence\model\pretrained\yolo11n-obb.pt
-data: C:\KP\AI_and_Automation\Sem_2\PAI\Vision-Intelligence\data\datasets\rgb\data.yaml
+data: C:\KP\AI_and_Automation\Sem_2\PAI\Vision-Intelligence\data\datasets\2026-10-16_v2\rgb\data.yaml
 epochs: 200
 time: null
 patience: 30
@@ -12,8 +12,8 @@ save_period: -1
 cache: false
 device: '0'
 workers: 8
-project: C:\KP\AI_and_Automation\Sem_2\PAI\Vision-Intelligence\model
-name: rgb_s0
+project: C:\KP\AI_and_Automation\Sem_2\PAI\Vision-Intelligence\model\2026-10-16_v2
+name: rgb_yolo11n-obb_s0
 exist_ok: true
 pretrained: true
 cls_remap: true
@@ -111,4 +111,4 @@ auto_augment: randaugment
 erasing: 0.4
 cfg: null
 tracker: tracktrack.yaml
-save_dir: C:\KP\AI_and_Automation\Sem_2\PAI\Vision-Intelligence\model\rgb_s0
+save_dir: C:\KP\AI_and_Automation\Sem_2\PAI\Vision-Intelligence\model\2026-10-16_v2\rgb_yolo11n-obb_s0

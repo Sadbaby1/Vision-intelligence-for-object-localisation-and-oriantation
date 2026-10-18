@@ -1,0 +1,4 @@
+run,dataset,variant,model,seed,channels,imgsz,epochs_run,best_epoch,val_mAP50,val_mAP50-95,created
+2026-10-16_rgb_v1/rgb_yolo11n-obb_s0,2026-10-16_rgb_v1,rgb,yolo11n-obb,0,3,1280,138,108,0.9866,0.9774,2026-10-18T13:40:16
+2026-10-16_v2/rgb_yolo11n-obb_s0,2026-10-16_v2,rgb,yolo11n-obb,0,3,1280,169,139,0.9875,0.9858,2026-10-18T23:37:10
+2026-10-16_v2/rgbd_yolo11n-obb_s0,2026-10-16_v2,rgbd,yolo11n-obb,0,4,1280,159,129,0.9875,0.9857,2026-10-19T00:24:19

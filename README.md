@@ -106,79 +106,127 @@ depth_mm = cv2.imread("depth/20261010_142501_0001.png", cv2.IMREAD_UNCHANGED)  #
 
 Tips for a good dataset: vary object position, rotation, distance (about 0.4–1.5 m), background and lighting, and include several objects in the same picture.
 
+## Datasets and models: how they are organised
+
+Every dataset version and every trained model has its own folder, so experiments never mix and nothing has to be deleted to train something new:
+
+```
+data/
+├── captures/<folder>/<session>/          raw camera data: color/, depth/, intrinsics.json   (read-only)
+├── roboflow/<export>/                    Roboflow exports as downloaded                       (read-only)
+└── datasets/<dataset_id>/                one folder per dataset version
+    ├── manifest.json                     where the data came from, split settings, classes, counts
+    ├── index.csv                         every image -> session, frame, split, source file
+    ├── rgb/{images,labels}/{train,val,test}/ + data.yaml
+    └── rgbd/...                          4-channel version of the same images (RGB-D model)
+model/
+├── pretrained/yolo11n-obb.pt
+├── registry.csv                          one row per training run (list it with `runs`)
+└── <dataset_id>/
+    ├── comparison.csv                    `evaluate` results for all models of this dataset
+    └── <variant>_<model>_s<seed>/        e.g. rgb_yolo11n-obb_s0
+        ├── weights/best.pt, last.pt
+        ├── run_info.json                 dataset, classes, channels, image size, settings, scores
+        ├── args.yaml, results.csv, *.png Ultralytics training record and plots
+        ├── eval_test/                    from `evaluate`
+        └── test_test/                    from `test`
+```
+
+- `split` refuses to write into an existing dataset ID and `train` refuses an existing run; use a new ID / `--name`, or `--overwrite` on purpose.
+- Use a new dataset ID for every new export or labelling round.
+- Current content:
+
+| What | Where | Notes |
+|---|---|---|
+| Roboflow export (as downloaded) | `data/roboflow/rgb_2026-10-16_export_1280/` | includes Roboflow-augmented copies, no depth |
+| Same labels paired with colour + depth | `data/roboflow/rgbd_2026-10-16_export_1280/` | `pair-depth`: unchanged images only (682 frames) |
+| Dataset v1 (RGB only) | `data/datasets/2026-10-16_rgb_v1/` | from the export incl. augmented copies |
+| Dataset v2 (RGB and RGB-D) | `data/datasets/2026-10-16_v2/` | from the paired folder; `rgb/` and `rgbd/` share images, labels and split |
+| Model trained on v1 | `model/2026-10-16_rgb_v1/rgb_yolo11n-obb_s0/` | |
+
 ## Training the detector
 
 Trains Ultralytics YOLO-OBB (`yolo11n-obb`) on a labelled dataset. Training uses the NVIDIA GPU automatically if one is available (PyTorch is installed with CUDA 12.8 by `uv sync`).
 
 Labels are YOLO OBB (`class x1 y1 x2 y2 x3 y3 x4 y4`, normalized). Class names come from the dataset YAML (current scheme: `0 = Air_Filter`, `1 = filter`, `2 = frame`); evaluate, test and detect use the trained model's own class names, so any scheme works.
 
-### 1. Split the labelled data (recommended)
+### 1. Pair the labels with depth (for RGB-D)
 
-Consecutive camera frames are almost identical, so a random split puts near-duplicates of test images into train and inflates the test scores. `split` pools all images of a dataset (e.g. a Roboflow export) and re-splits each capture session into contiguous time blocks (70 / 15 / 15 %), dropping a few frames at each boundary:
-
-```
-uv run python -m vision_intelligence split --data data/data.yaml            # -> data/datasets/rgb/
-uv run python -m vision_intelligence split --data data/data.yaml --gap 5 --overwrite
-```
-
-Image names must start with `<session>_<frame>` (e.g. `20261016_111506_0042...`). Augmented copies of a frame stay together; val/test keep a single copy. The output has `images/{train,val,test}/`, `labels/...`, `data.yaml` and `split_report.csv`. The input is only copied, never changed.
-
-### 2. Train
+Roboflow keeps the original file name (`20261016_111506_0001_png.rf.<hash>.jpg`). `pair-depth` matches every labelled export image to its original capture frame, keeps only images Roboflow did not change (no augmentation), and copies the original colour image, its depth image and the session intrinsics next to the label:
 
 ```
-uv run python -m vision_intelligence train --data data/datasets/rgb/data.yaml   # after `split`
-uv run python -m vision_intelligence train --data data/data.yaml                # Roboflow export as it is
-uv run python -m vision_intelligence train                                      # data/datasets/rgb/ layout
-uv run python -m vision_intelligence train --data ... --seeds 0 1 2             # three runs with different seeds
+uv run python -m vision_intelligence pair-depth --data data/roboflow/<export>/data.yaml --out data/roboflow/rgbd_<export>
 ```
 
-`--data` accepts any Ultralytics dataset YAML, including Roboflow's `{train,valid,test}/{images,labels}` layout. Before training the script prints the classes and image counts per split, and warns if `imgsz` does not match the image size.
+Output: `rgb/images`, `rgb/labels`, `depth/`, `intrinsics/`, `index.csv`, `manifest.json` and `check/` (labels drawn on colour and on depth, to verify the alignment).
 
-Settings (same for RGB and RGB-D, defined in `COMMON` in `src/vision_intelligence/detection/train.py`): 200 epochs, image size 640 (set this to your images' size), batch 8, early stop after 30 epochs without improvement, colour (HSV) augmentation off. `--epochs`, `--imgsz` and `--batch` exist for quick tests only; never change them between the RGB and RGB-D model. The dataset and image size of each run are saved in `model/<run>/args.yaml`, and `evaluate`, `test` and `detect` reuse them automatically.
+### 2. Create a dataset version (train / val / test split)
 
-Output:
+Consecutive camera frames are almost identical, so a random split puts near-duplicates of test images into train and inflates the test scores. `split` re-splits each capture session into contiguous time blocks (70 / 15 / 15 %), dropping a few frames at each boundary. Both models later use this one split:
 
 ```
-data/datasets/rgb.yaml                 # dataset config written by the script
-model/pretrained/yolo11n-obb.pt        # pretrained start, downloaded on first run
-model/rgb_s0/weights/best.pt           # trained model (best validation mAP); use this for prediction
-model/rgb_s0/weights/last.pt           # model after the last epoch
-model/rgb_s0/results.csv, *.png        # training curves, confusion matrix, example predictions
+uv run python -m vision_intelligence split --data data/roboflow/rgbd_2026-10-16_export_1280/data.yaml --dataset 2026-10-16_v2
 ```
+
+Image names must start with `<session>_<frame>`. Output: `data/datasets/<dataset_id>/` with `rgb/`, `index.csv` (incl. the depth and intrinsics file of every image, if paired) and `manifest.json`. The input is only copied, never changed.
+
+### 3. Build the RGB-D version
+
+```
+uv run python -m vision_intelligence build-rgbd --dataset 2026-10-16_v2
+```
+
+Creates `<dataset_id>/rgbd/` with the same images, labels and split as `rgb/`, stored as 4-channel TIFFs (B, G, R, local height). Local height is the height of each pixel above its local surroundings, computed from depth (`geometry/depth.py`, parameters in `rgbd/rgbd_config.json`: kernel 151 px, full scale 40 mm, depth smoothing 9 px). `rgbd/preview/` holds the height channel as images: check that parts appear as bright shapes before training. Thin frames give almost no depth signal; the RGB-D model sees them through the colour channels.
+
+### 4. Train
+
+`--variant` says which version of the dataset is used:
+
+```
+uv run python -m vision_intelligence train --dataset 2026-10-16_v2 --variant rgb     # RGB model:   colour images (rgb/)
+uv run python -m vision_intelligence train --dataset 2026-10-16_v2 --variant rgbd    # RGB-D model: colour + local height (rgbd/)
+uv run python -m vision_intelligence train --dataset 2026-10-16_v2 --variant rgb --seeds 0 1 2   # three seeds
+uv run python -m vision_intelligence runs                                            # list all trained runs
+```
+
+Before training the script prints the classes and image counts per split, and warns if `imgsz` does not match the image size. Weights go to `model/<dataset_id>/<variant>_<model>_s<seed>/weights/best.pt`.
+
+Settings (same for RGB and RGB-D, defined in `COMMON` in `src/vision_intelligence/detection/train.py`): 200 epochs, image size 1280 (the size of the camera images), batch 8, early stop after 30 epochs without improvement, colour (HSV) augmentation off. `--epochs`, `--imgsz` and `--batch` exist for quick tests only; never change them between the RGB and RGB-D model. Each run's dataset and image size are recorded in `run_info.json`, and `evaluate`, `test` and `detect` reuse them automatically.
 
 ## Evaluating and testing a trained model
 
 Do this before trying the model live.
 
-**Scores** on the held-out `test` split (and `test_white` if it exists) for every trained run in `model/`:
+**Scores** on the held-out `test` split (and `test_white` if it exists):
 
 ```
-uv run python -m vision_intelligence evaluate                 # all runs, each on its own training dataset's test split
-uv run python -m vision_intelligence evaluate --runs rgb_s0   # one run
-uv run python -m vision_intelligence evaluate --data other/data.yaml   # test on a different dataset
+uv run python -m vision_intelligence evaluate                                   # all runs
+uv run python -m vision_intelligence evaluate --dataset <dataset_id>            # all models of one dataset
+uv run python -m vision_intelligence evaluate --runs <dataset_id>/rgb_yolo11n-obb_s0
+uv run python -m vision_intelligence evaluate --runs ... --data other/data.yaml # test on a different dataset
 ```
 
-Prints a table (mAP50, mAP50-95, precision / recall / AP50 for every class, inference time per image), writes `model/comparison.csv`, and saves Ultralytics plots (confusion matrix, PR curves) to `model/<run>/eval_test/`. With several seeds it also prints the mean and standard deviation. Filter recall on `test_white` is the primary metric of the RGB vs RGB-D comparison.
+Prints a table (mAP50, mAP50-95, precision / recall / AP50 for every class, inference time per image), writes `model/<dataset_id>/comparison.csv`, and saves Ultralytics plots (confusion matrix, PR curves) to `model/<dataset_id>/<run>/eval_test/`. With several seeds it also prints the mean and standard deviation. Filter recall on `test_white` is the primary metric of the RGB vs RGB-D comparison.
 
 **Visual test**: predictions drawn on the test images next to the ground-truth labels:
 
 ```
-uv run python -m vision_intelligence test                                       # model/rgb_s0 on its test split
-uv run python -m vision_intelligence test --source path/to/new/images           # any image or folder
-uv run python -m vision_intelligence test --weights model/rgb_s1/weights/best.pt --conf 0.3
+uv run python -m vision_intelligence test                                     # latest trained run, its test split
+uv run python -m vision_intelligence test --run <dataset_id>/<run>            # a specific run
+uv run python -m vision_intelligence test --run <dataset_id>/<run> --source path/to/new/images --conf 0.3
 ```
 
-Output in `model/<run>/test_<folder>/`: one image per input (orange = filter, magenta = frame, cyan = Air_Filter, green = ground truth, red = missed), `overview.png` with all images as numbered tiles, `results.csv` (per image: correct, missed and false detections, `OK` or `CHECK`) and `predictions.json` (class, confidence, corners, approximate 3D centre, yaw). A prediction counts as correct if it has the right class and overlaps the ground truth by IoU ≥ 0.5 (`--iou`).
+Output in `model/<dataset_id>/<run>/test_<folder>/`: one image per input (orange = filter, magenta = frame, cyan = Air_Filter, green = ground truth, red = missed), `overview.png` with all images as numbered tiles, `results.csv` (per image: correct, missed and false detections, `OK` or `CHECK`) and `predictions.json` (class, confidence, corners, approximate 3D centre, yaw). A prediction counts as correct if it has the right class and overlaps the ground truth by IoU ≥ 0.5 (`--iou`).
 
 ## Live detection test
 
-Runs the trained model on the camera stream:
+Runs a trained model on the camera stream (the command prints which model it uses):
 
 ```
-uv run python -m vision_intelligence detect                     # uses model/rgb_s0/weights/best.pt
-uv run python -m vision_intelligence detect --conf 0.3          # also show less confident detections
-uv run python -m vision_intelligence detect --weights model/rgbd_s0/weights/best.pt
-uv run python -m vision_intelligence detect --stretch           # only if the training images were stretched to a square
+uv run python -m vision_intelligence detect                                   # latest trained run
+uv run python -m vision_intelligence detect --run <dataset_id>/<run>          # a specific run
+uv run python -m vision_intelligence detect --conf 0.3                        # also show less confident detections
+uv run python -m vision_intelligence detect --stretch                         # only if the training images were stretched to a square
 ```
 
 The camera gives 1280×720 frames. By default they are letterboxed (aspect ratio kept) to the model's training size. If the training images were made with Roboflow's "Resize: Stretch to 640x640", use `--stretch` so live frames are squashed the same way; otherwise parts look a different shape than in training.

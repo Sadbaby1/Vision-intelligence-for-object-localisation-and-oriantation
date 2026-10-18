@@ -20,7 +20,6 @@ from vision_intelligence.geometry.coordinate import deproject_pixel, depth_at
 from vision_intelligence.visualization import put_text_lines
 
 WINDOW = "Vision Intelligence - live detection"
-DEFAULT_WEIGHTS = paths.MODEL / "rgb_s0" / "weights" / "best.pt"
 SNAPSHOT_DIR = paths.OUTPUTS / "live"
 MAX_DISPLAY_WIDTH = 1280
 COLORS = {"filter": (0, 165, 255), "frame": (255, 0, 255), "Air_Filter": (255, 255, 0)}  # BGR: orange, magenta, cyan
@@ -88,16 +87,17 @@ def draw(image, dets):
     return image
 
 
-def run(weights=DEFAULT_WEIGHTS, conf=0.5, imgsz=None, device=None, stretch=False):
+def run(weights=None, conf=0.5, imgsz=None, device=None, stretch=False, run_name=None):
     """
+    Model: ``weights``, else ``run_name`` ('<dataset>/<run>'), else the latest trained run.
     ``imgsz`` defaults to the model's training image size (from the run's args.yaml).
     ``stretch``: resize each camera frame to imgsz x imgsz without keeping the aspect ratio
     before detection. Use it only if the training images were stretched the same way
     (e.g. Roboflow "Resize: Stretch to 640x640"); otherwise leave it off (letterboxing).
     """
-    from vision_intelligence.detection.dataset import run_args
+    from vision_intelligence.detection.dataset import resolve_weights, run_args
 
-    weights = Path(weights)
+    weights = resolve_weights(run_name, weights)
     if not weights.exists():
         raise FileNotFoundError(f"{weights} not found; train a model first (python -m vision_intelligence train)")
     imgsz = imgsz or int(run_args(weights).get("imgsz", 640))

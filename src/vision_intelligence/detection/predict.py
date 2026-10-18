@@ -25,7 +25,7 @@ from ultralytics import YOLO
 
 from vision_intelligence import paths
 from vision_intelligence.detection import dataset
-from vision_intelligence.detection.live import DEFAULT_WEIGHTS, detections, draw
+from vision_intelligence.detection.live import detections, draw
 from vision_intelligence.visualization import put_text_lines, tile_overview
 
 GT_COLOR = (0, 200, 0)
@@ -114,12 +114,13 @@ def _output_dir(weights, source):
     return weights.parent.parent / f"test_{name}"
 
 
-def run(weights=DEFAULT_WEIGHTS, source=None, conf=0.5, imgsz=None, out=None, iou_thresh=0.5, device=None):
+def run(weights=None, source=None, conf=0.5, imgsz=None, out=None, iou_thresh=0.5, device=None, run_name=None):
     """
+    Model: ``weights``, else ``run_name`` ('<dataset>/<run>'), else the latest trained run.
     ``source`` defaults to the test split of the model's training dataset and ``imgsz`` to the
-    training image size, both read from the run's ``args.yaml``.
+    training image size, both recorded with the run.
     """
-    weights = Path(weights)
+    weights = dataset.resolve_weights(run_name, weights)
     if not weights.exists():
         raise FileNotFoundError(f"{weights} not found; train a model first")
     source = Path(source) if source else default_source(weights)

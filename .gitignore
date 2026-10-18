@@ -9,18 +9,41 @@ wheels/
 # Virtual environments
 .venv
 
-# Orbbec SDK logs
+# Logs and run outputs
 Log/
-
-# Local data, model weights and run outputs
 outputs/
 *.onnx
-/data_check
+
+# Ultralytics' own download and run folders at the repo root
+/weights/
+/runs/
+
+# Data: raw captures, Roboflow exports and prepared datasets are too large for git
+/data/
+
+# Local notes and checks
 METHODOLOGY.md
-session.py
-prepare_labeling.py
-depth.py
-auto_label.py
-/data
-model/
-weights/
+/data_check/
+/experiments/
+
+# Dataset-preparation tools: only needed where the raw captures are (not for training,
+# evaluating, testing or live detection with the trained models)
+src/vision_intelligence/camera/session.py
+src/vision_intelligence/detection/prepare_labeling.py
+src/vision_intelligence/detection/auto_label.py
+src/vision_intelligence/detection/split_dataset.py
+src/vision_intelligence/detection/pair_depth.py
+src/vision_intelligence/detection/build_rgbd_dataset.py
+
+# Models: track only what is needed to use a trained model on another machine
+#   model/<dataset>/<run>/weights/best.pt, run_info.json, args.yaml, results.csv
+#   model/registry.csv, model/<dataset>/comparison.csv
+# Ignored: last.pt, plots, eval/test outputs, the pretrained start (downloaded automatically)
+/model/**
+!/model/**/
+!/model/registry.csv
+!/model/*/comparison.csv
+!/model/*/*/run_info.json
+!/model/*/*/args.yaml
+!/model/*/*/results.csv
+!/model/*/*/weights/best.pt
