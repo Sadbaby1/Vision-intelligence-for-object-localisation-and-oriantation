@@ -21,3 +21,6 @@ session.py
 prepare_labeling.py
 depth.py
 auto_label.py
+/data
+model/
+weights/

@@ -23,7 +23,12 @@ WINDOW = "Vision Intelligence - live detection"
 DEFAULT_WEIGHTS = paths.MODEL / "rgb_s0" / "weights" / "best.pt"
 SNAPSHOT_DIR = paths.OUTPUTS / "live"
 MAX_DISPLAY_WIDTH = 1280
-COLORS = {"filter": (0, 165, 255), "frame": (255, 0, 255)}  # BGR: orange, magenta
+COLORS = {"filter": (0, 165, 255), "frame": (255, 0, 255), "Air_Filter": (255, 255, 0)}  # BGR: orange, magenta, cyan
+FALLBACK_COLORS = [(0, 255, 255), (255, 128, 0), (128, 0, 255), (0, 128, 255)]
+
+
+def class_color(name):
+    return COLORS.get(name) or FALLBACK_COLORS[sum(map(ord, name)) % len(FALLBACK_COLORS)]
 
 
 def yaw_deg(corners):
@@ -36,15 +41,20 @@ def yaw_deg(corners):
     return float((np.degrees(np.arctan2(dy, dx)) + 90) % 180 - 90)
 
 
-def detections(result, depth_mm, intrinsics):
-    """Turn one Ultralytics OBB result into a list of dicts with class, confidence, 3D centre and yaw."""
+def detections(result, depth_mm=None, intrinsics=None, scale=(1.0, 1.0)):
+    """
+    Turn one Ultralytics OBB result into a list of dicts with class, confidence, 3D centre
+    and yaw. Without depth/intrinsics the 3D centre is None. ``scale`` (sx, sy) maps box
+    corners back to the original image when the model saw a resized copy.
+    """
     out = []
     obb = result.obb
     if obb is None:
         return out
     for corners, cls_id, conf in zip(obb.xyxyxyxy.cpu().numpy(), obb.cls.cpu().numpy(), obb.conf.cpu().numpy()):
+        corners = corners * np.asarray(scale, dtype=np.float32)
         u, v = (int(round(c)) for c in corners.mean(axis=0))
-        z = depth_at(depth_mm, u, v, window=9)
+        z = depth_at(depth_mm, u, v, window=9) if depth_mm is not None and intrinsics is not None else None
         xyz = deproject_pixel(u, v, z, intrinsics) if z is not None else None
         out.append({
             "class": result.names[int(cls_id)],
@@ -58,28 +68,41 @@ def detections(result, depth_mm, intrinsics):
 
 
 def draw(image, dets):
+    """Draw boxes and labels; text and line sizes scale with the image (0.6 at 1280 px wide)."""
+    s = max(image.shape[1] / 1280, 0.75)
+    font, thick, line_h = 0.6 * s, max(int(round(2 * s)), 1), int(22 * s)
     for d in dets:
-        color = COLORS.get(d["class"], (0, 255, 0))
+        color = class_color(d["class"])
         pts = d["corners"].astype(np.int32)
-        cv.polylines(image, [pts], True, color, 3)
-        cv.circle(image, d["center_px"], 5, color, -1)
+        cv.polylines(image, [pts], True, color, max(int(round(3 * s)), 1))
+        cv.circle(image, d["center_px"], max(int(round(5 * s)), 2), color, -1)
+        lines = [f"{d['class']} {d['confidence']:.2f}  yaw {d['yaw_deg']:.0f}deg"]
         xyz = d["xyz_mm"]
-        pos = f"X{xyz[0]:.0f} Y{xyz[1]:.0f} Z{xyz[2]:.0f}mm" if xyz else "no depth"
-        lines = [f"{d['class']} {d['confidence']:.2f}  yaw {d['yaw_deg']:.0f}deg", pos]
-        x, y = int(pts[:, 0].min()), max(int(pts[:, 1].min()) - 35, 20)
+        if xyz:
+            lines.append(f"X{xyz[0]:.0f} Y{xyz[1]:.0f} Z{xyz[2]:.0f}mm")
+        x, y = int(pts[:, 0].min()), max(int(pts[:, 1].min()) - line_h * len(lines) + line_h // 2, line_h)
         for i, text in enumerate(lines):
-            org = (x, y + i * 22)
-            cv.putText(image, text, org, cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 4)
-            cv.putText(image, text, org, cv.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+            org = (x, y + i * line_h)
+            cv.putText(image, text, org, cv.FONT_HERSHEY_SIMPLEX, font, (0, 0, 0), thick + 2)
+            cv.putText(image, text, org, cv.FONT_HERSHEY_SIMPLEX, font, color, thick)
     return image
 
 
-def run(weights=DEFAULT_WEIGHTS, conf=0.5, imgsz=1280, device=None):
+def run(weights=DEFAULT_WEIGHTS, conf=0.5, imgsz=None, device=None, stretch=False):
+    """
+    ``imgsz`` defaults to the model's training image size (from the run's args.yaml).
+    ``stretch``: resize each camera frame to imgsz x imgsz without keeping the aspect ratio
+    before detection. Use it only if the training images were stretched the same way
+    (e.g. Roboflow "Resize: Stretch to 640x640"); otherwise leave it off (letterboxing).
+    """
+    from vision_intelligence.detection.dataset import run_args
+
     weights = Path(weights)
     if not weights.exists():
         raise FileNotFoundError(f"{weights} not found; train a model first (python -m vision_intelligence train)")
+    imgsz = imgsz or int(run_args(weights).get("imgsz", 640))
     model = YOLO(str(weights))
-    print(f"Loaded {weights}")
+    print(f"Loaded {weights} (classes {model.names}), imgsz {imgsz}, {'stretch' if stretch else 'letterbox'}")
 
     orbbec = None
     try:
@@ -94,8 +117,13 @@ def run(weights=DEFAULT_WEIGHTS, conf=0.5, imgsz=1280, device=None):
                 continue
             color, depth_mm = result
 
-            pred = model.predict(color, imgsz=imgsz, conf=conf, device=device, verbose=False)[0]
-            dets = detections(pred, depth_mm, orbbec.intrinsics)
+            if stretch:
+                h, w = color.shape[:2]
+                model_input, scale = cv.resize(color, (imgsz, imgsz)), (w / imgsz, h / imgsz)
+            else:
+                model_input, scale = color, (1.0, 1.0)
+            pred = model.predict(model_input, imgsz=imgsz, conf=conf, device=device, verbose=False)[0]
+            dets = detections(pred, depth_mm, orbbec.intrinsics, scale)
             annotated = draw(color.copy(), dets)
 
             now = time.monotonic()

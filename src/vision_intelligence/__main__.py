@@ -2,7 +2,10 @@
 ``python -m vision_intelligence``               live camera view (same as ``vision-intelligence``)
 ``python -m vision_intelligence prepare-label`` select capture frames for labelling
 ``python -m vision_intelligence auto-label``    automatic YOLO-OBB labels for data/datasets/to_label
+``python -m vision_intelligence split``         re-split a labelled dataset by time blocks per session
 ``python -m vision_intelligence train``         train YOLO-OBB (rgb or rgbd), weights saved under model/
+``python -m vision_intelligence evaluate``      scores on test / test_white for all runs -> model/comparison.csv
+``python -m vision_intelligence test``          predictions vs ground truth drawn on the test images
 ``python -m vision_intelligence detect``        live detection on the Orbbec camera with a trained model
 
 Default paths are inside the project root (see ``paths.py``), so the commands work
@@ -45,8 +48,17 @@ def main():
             p.add_argument(f"--{f.name.replace('_', '-')}", type=f.type, default=f.default,
                            help=f"default {f.default}")
 
+    p = sub.add_parser("split", help="re-split a labelled dataset by time blocks per session (no near-duplicate leakage)")
+    p.add_argument("--data", type=Path, required=True, help="input dataset YAML, e.g. data/data.yaml (Roboflow export)")
+    p.add_argument("--out", type=Path, default=paths.DATASETS / "rgb", help="output folder (default: data/datasets/rgb)")
+    p.add_argument("--shares", type=float, nargs=3, default=[0.70, 0.15, 0.15], metavar=("TRAIN", "VAL", "TEST"))
+    p.add_argument("--gap", type=int, default=3, help="frames dropped at each block boundary (default 3)")
+    p.add_argument("--overwrite", action="store_true", help="replace existing images/labels in --out")
+
     p = sub.add_parser("train", help="train YOLO-OBB on the rgb or rgbd dataset (weights saved under model/)")
-    p.add_argument("--variant", choices=["rgb", "rgbd"], default="rgb")
+    p.add_argument("--data", type=Path, help="dataset YAML, e.g. data/datasets/rgb/data.yaml or a Roboflow "
+                                             "data.yaml (default: data/datasets/<variant>/ layout)")
+    p.add_argument("--variant", choices=["rgb", "rgbd"], default="rgb", help="run name prefix; with --data only a label")
     p.add_argument("--seeds", type=int, nargs="+", default=[0], help="one run per seed, e.g. --seeds 0 1 2")
     p.add_argument("--datasets", type=Path, default=paths.DATASETS)
     p.add_argument("--model-root", type=Path, default=paths.MODEL)
@@ -57,22 +69,51 @@ def main():
     p.add_argument("--imgsz", type=int)
     p.add_argument("--batch", type=int)
 
+    p = sub.add_parser("evaluate", help="score trained models on test (and test_white), write model/comparison.csv")
+    p.add_argument("--runs", nargs="+", help="run folder names, e.g. rgb_s0 (default: all runs in model/)")
+    p.add_argument("--data", type=Path, help="dataset YAML to test on (default: each run's training dataset)")
+    p.add_argument("--datasets", type=Path, default=paths.DATASETS)
+    p.add_argument("--model-root", type=Path, default=paths.MODEL)
+    p.add_argument("--device", default=None, help="GPU index, 'mps' or 'cpu' (default: automatic)")
+
+    p = sub.add_parser("test", aliases=["predict"],
+                       help="draw predictions vs ground truth on test images, list found/missed/false per image")
+    p.add_argument("--weights", type=Path, default=paths.MODEL / "rgb_s0" / "weights" / "best.pt")
+    p.add_argument("--source", type=Path,
+                   help="image file or folder (default: the test split of the model's training dataset)")
+    p.add_argument("--out", type=Path, help="output folder (default: model/<run>/test_<source name>)")
+    p.add_argument("--conf", type=float, default=0.5, help="minimum confidence (default 0.5)")
+    p.add_argument("--iou", type=float, default=0.5, help="IoU needed to count a prediction as correct (default 0.5)")
+    p.add_argument("--imgsz", type=int, help="inference size (default: the model's training size)")
+    p.add_argument("--device", default=None)
+
     p = sub.add_parser("detect", help="live detection on the Orbbec camera with a trained model")
     p.add_argument("--weights", type=Path, default=paths.MODEL / "rgb_s0" / "weights" / "best.pt")
     p.add_argument("--conf", type=float, default=0.5, help="minimum confidence to show a detection (default 0.5)")
-    p.add_argument("--imgsz", type=int, default=1280, help="inference size; keep equal to the training size")
+    p.add_argument("--imgsz", type=int, help="inference size (default: the model's training size)")
+    p.add_argument("--stretch", action="store_true",
+                   help="squash each frame to imgsz x imgsz like Roboflow's 'Stretch' resize; only if training used it")
     p.add_argument("--device", default=None, help="GPU index, 'mps' or 'cpu' (default: automatic)")
 
     args = parser.parse_args()
 
-    if args.command == "detect":
+    if args.command == "split":
+        from vision_intelligence.detection.split_dataset import split
+        split(args.data, args.out, tuple(args.shares), args.gap, args.overwrite)
+    elif args.command == "evaluate":
+        from vision_intelligence.detection.evaluate import evaluate
+        evaluate(args.model_root, args.datasets, args.runs, args.device, args.data)
+    elif args.command in ("test", "predict"):
+        from vision_intelligence.detection.predict import run as predict
+        predict(args.weights, args.source, args.conf, args.imgsz, args.out, args.iou, args.device)
+    elif args.command == "detect":
         from vision_intelligence.detection.live import run
-        run(args.weights, args.conf, args.imgsz, args.device)
+        run(args.weights, args.conf, args.imgsz, args.device, args.stretch)
     elif args.command == "train":
         from vision_intelligence.detection.train import train
         overrides = {k: getattr(args, k) for k in ("epochs", "imgsz", "batch") if getattr(args, k) is not None}
         for seed in args.seeds:
-            train(args.variant, seed, args.datasets, args.model_root, device=args.device, **overrides)
+            train(args.variant, seed, args.datasets, args.model_root, device=args.device, data=args.data, **overrides)
     elif args.command == "prepare-label":
         from vision_intelligence.detection.prepare_labeling import prepare
         prepare(args.captures, args.out, args.source_folders, args.min_gap, args.every)

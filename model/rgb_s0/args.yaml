@@ -1,8 +1,8 @@
 task: obb
 mode: train
-model: model\pretrained\yolo11n-obb.pt
-data: data\datasets\rgb.yaml
-epochs: 100
+model: C:\KP\AI_and_Automation\Sem_2\PAI\Vision-Intelligence\model\pretrained\yolo11n-obb.pt
+data: C:\KP\AI_and_Automation\Sem_2\PAI\Vision-Intelligence\data\datasets\rgb\data.yaml
+epochs: 200
 time: null
 patience: 30
 batch: 8

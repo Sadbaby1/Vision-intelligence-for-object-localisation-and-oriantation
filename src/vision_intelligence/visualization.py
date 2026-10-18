@@ -13,6 +13,19 @@ def colorize_depth(depth_mm, vis_range_mm=DEPTH_VIS_RANGE_MM):
     return vis
 
 
+def tile_overview(images, cols=5, tile=(384, 216)):
+    """Grid of small numbered tiles (1, 2, ...) for a quick visual check of many images."""
+    tiles = []
+    for number, img in enumerate(images, 1):
+        t = cv.resize(img, tile)
+        cv.putText(t, str(number), (8, 40), cv.FONT_HERSHEY_SIMPLEX, 1.3, (0, 0, 0), 6)
+        cv.putText(t, str(number), (8, 40), cv.FONT_HERSHEY_SIMPLEX, 1.3, (255, 255, 255), 2)
+        tiles.append(t)
+    while len(tiles) % cols:
+        tiles.append(np.zeros_like(tiles[0]))
+    return cv.vconcat([cv.hconcat(tiles[i : i + cols]) for i in range(0, len(tiles), cols)])
+
+
 def put_text_lines(img, lines, origin=(10, 25), line_height=25):
     """Draw white text with a dark outline so it is readable on any background."""
     x, y = origin

@@ -110,23 +110,31 @@ Tips for a good dataset: vary object position, rotation, distance (about 0.4–1
 
 Trains Ultralytics YOLO-OBB (`yolo11n-obb`) on a labelled dataset. Training uses the NVIDIA GPU automatically if one is available (PyTorch is installed with CUDA 12.8 by `uv sync`).
 
-Expected dataset layout (YOLO OBB labels, `0 = filter`, `1 = frame`):
+Labels are YOLO OBB (`class x1 y1 x2 y2 x3 y3 x4 y4`, normalized). Class names come from the dataset YAML (current scheme: `0 = Air_Filter`, `1 = filter`, `2 = frame`); evaluate, test and detect use the trained model's own class names, so any scheme works.
+
+### 1. Split the labelled data (recommended)
+
+Consecutive camera frames are almost identical, so a random split puts near-duplicates of test images into train and inflates the test scores. `split` pools all images of a dataset (e.g. a Roboflow export) and re-splits each capture session into contiguous time blocks (70 / 15 / 15 %), dropping a few frames at each boundary:
 
 ```
-data/datasets/rgb/
-├── images/{train,val,test}/   # .png colour images
-└── labels/{train,val,test}/   # .txt label files, same base names as the images
+uv run python -m vision_intelligence split --data data/data.yaml            # -> data/datasets/rgb/
+uv run python -m vision_intelligence split --data data/data.yaml --gap 5 --overwrite
 ```
 
-Train:
+Image names must start with `<session>_<frame>` (e.g. `20261016_111506_0042...`). Augmented copies of a frame stay together; val/test keep a single copy. The output has `images/{train,val,test}/`, `labels/...`, `data.yaml` and `split_report.csv`. The input is only copied, never changed.
+
+### 2. Train
 
 ```
-uv run python -m vision_intelligence train                   # RGB model, seed 0
-uv run python -m vision_intelligence train --seeds 0 1 2     # three runs with different seeds
-uv run python -m vision_intelligence train --variant rgbd    # RGB-D model (needs data/datasets/rgbd, see METHODOLOGY.md Phase 2)
+uv run python -m vision_intelligence train --data data/datasets/rgb/data.yaml   # after `split`
+uv run python -m vision_intelligence train --data data/data.yaml                # Roboflow export as it is
+uv run python -m vision_intelligence train                                      # data/datasets/rgb/ layout
+uv run python -m vision_intelligence train --data ... --seeds 0 1 2             # three runs with different seeds
 ```
 
-Settings (same for RGB and RGB-D, defined in `COMMON` in `src/vision_intelligence/detection/train.py`): 100 epochs, image size 1280, batch 8, early stop after 30 epochs without improvement, colour (HSV) augmentation off. `--epochs`, `--imgsz` and `--batch` exist for quick tests only; never change them between the RGB and RGB-D model.
+`--data` accepts any Ultralytics dataset YAML, including Roboflow's `{train,valid,test}/{images,labels}` layout. Before training the script prints the classes and image counts per split, and warns if `imgsz` does not match the image size.
+
+Settings (same for RGB and RGB-D, defined in `COMMON` in `src/vision_intelligence/detection/train.py`): 200 epochs, image size 640 (set this to your images' size), batch 8, early stop after 30 epochs without improvement, colour (HSV) augmentation off. `--epochs`, `--imgsz` and `--batch` exist for quick tests only; never change them between the RGB and RGB-D model. The dataset and image size of each run are saved in `model/<run>/args.yaml`, and `evaluate`, `test` and `detect` reuse them automatically.
 
 Output:
 
@@ -138,6 +146,30 @@ model/rgb_s0/weights/last.pt           # model after the last epoch
 model/rgb_s0/results.csv, *.png        # training curves, confusion matrix, example predictions
 ```
 
+## Evaluating and testing a trained model
+
+Do this before trying the model live.
+
+**Scores** on the held-out `test` split (and `test_white` if it exists) for every trained run in `model/`:
+
+```
+uv run python -m vision_intelligence evaluate                 # all runs, each on its own training dataset's test split
+uv run python -m vision_intelligence evaluate --runs rgb_s0   # one run
+uv run python -m vision_intelligence evaluate --data other/data.yaml   # test on a different dataset
+```
+
+Prints a table (mAP50, mAP50-95, precision / recall / AP50 for every class, inference time per image), writes `model/comparison.csv`, and saves Ultralytics plots (confusion matrix, PR curves) to `model/<run>/eval_test/`. With several seeds it also prints the mean and standard deviation. Filter recall on `test_white` is the primary metric of the RGB vs RGB-D comparison.
+
+**Visual test**: predictions drawn on the test images next to the ground-truth labels:
+
+```
+uv run python -m vision_intelligence test                                       # model/rgb_s0 on its test split
+uv run python -m vision_intelligence test --source path/to/new/images           # any image or folder
+uv run python -m vision_intelligence test --weights model/rgb_s1/weights/best.pt --conf 0.3
+```
+
+Output in `model/<run>/test_<folder>/`: one image per input (orange = filter, magenta = frame, cyan = Air_Filter, green = ground truth, red = missed), `overview.png` with all images as numbered tiles, `results.csv` (per image: correct, missed and false detections, `OK` or `CHECK`) and `predictions.json` (class, confidence, corners, approximate 3D centre, yaw). A prediction counts as correct if it has the right class and overlaps the ground truth by IoU ≥ 0.5 (`--iou`).
+
 ## Live detection test
 
 Runs the trained model on the camera stream:
@@ -146,7 +178,10 @@ Runs the trained model on the camera stream:
 uv run python -m vision_intelligence detect                     # uses model/rgb_s0/weights/best.pt
 uv run python -m vision_intelligence detect --conf 0.3          # also show less confident detections
 uv run python -m vision_intelligence detect --weights model/rgbd_s0/weights/best.pt
+uv run python -m vision_intelligence detect --stretch           # only if the training images were stretched to a square
 ```
+
+The camera gives 1280×720 frames. By default they are letterboxed (aspect ratio kept) to the model's training size. If the training images were made with Roboflow's "Resize: Stretch to 640x640", use `--stretch` so live frames are squashed the same way; otherwise parts look a different shape than in training.
 
 | Key | Effect |
 |---|---|
