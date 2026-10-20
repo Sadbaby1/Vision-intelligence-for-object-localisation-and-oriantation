@@ -43,7 +43,8 @@ DATA = ROOT / "data"
 CAPTURES = DATA / "captures"
 ROBOFLOW = DATA / "roboflow"
 DATASETS = DATA / "datasets"
-PART_DIMENSIONS = DATA / "calibration" / "part_dimensions.json"
+CONFIG = ROOT / "config"  # small settings files that are tracked in git
+PART_DIMENSIONS = CONFIG / "part_dimensions.json"
 MODEL = ROOT / "model"
 OUTPUTS = ROOT / "outputs"
 

@@ -75,7 +75,12 @@ def main():
     p.add_argument("--gap", type=int, default=3, help="frames dropped at each block boundary (default 3)")
     p.add_argument("--overwrite", action="store_true", help="replace the dataset if it already exists")
 
-    p = sub.add_parser("build-rgbd", help="build <id>/rgbd/: same images + local height from depth (4 channels)")
+    sub.add_parser("board-print", help="write the printable ChArUco board (config/charuco_*_A3.pdf/.png)")
+
+    p = sub.add_parser("calibrate-board", help="measure the camera -> board pose with the camera, save config/board_pose.json")
+    p.add_argument("--frames", type=int, default=30, help="good board detections to average (default 30)")
+
+    p = sub.add_parser("build-rgbd",help="build <id>/rgbd/: same images + local height from depth (4 channels)")
     p.add_argument("--dataset", required=True, help="dataset ID with rgb/ and depth linked in index.csv")
     p.add_argument("--kernel-px", type=int, default=151, help="local height kernel, wider than a part (default 151)")
     p.add_argument("--max-height-mm", type=float, default=40.0, help="height shown as full white (default 40)")
@@ -119,14 +124,19 @@ def main():
     p.add_argument("--imgsz", type=int, help="inference size (default: the model's training size)")
     p.add_argument("--device", default=None)
 
-    p = sub.add_parser("detect", help="live detection on the Orbbec camera with a trained model")
-    p.add_argument("--run", help="'<dataset>/<run>' (default: the most recently trained run)")
-    p.add_argument("--weights", type=Path, help="weights file instead of --run")
-    p.add_argument("--conf", type=float, default=0.5, help="minimum confidence to show a detection (default 0.5)")
-    p.add_argument("--imgsz", type=int, help="inference size (default: the model's training size)")
-    p.add_argument("--stretch", action="store_true",
-                   help="squash each frame to imgsz x imgsz like Roboflow's 'Stretch' resize; only if training used it")
-    p.add_argument("--device", default=None, help="GPU index, 'mps' or 'cpu' (default: automatic)")
+    for name, text in (("detect", "live detection + 3D localisation on the Orbbec camera (RGB or RGB-D model)"),
+                       ("measure", "repeatability test: localise a static scene N times, mean +- std per part")):
+        p = sub.add_parser(name, help=text)
+        p.add_argument("--run", help="'<dataset>/<run>' (default: the most recently trained run)")
+        p.add_argument("--weights", type=Path, help="weights file instead of --run")
+        p.add_argument("--conf", type=float, default=0.5, help="minimum confidence to show a detection (default 0.5)")
+        p.add_argument("--imgsz", type=int, help="inference size (default: the model's training size)")
+        p.add_argument("--stretch", action="store_true",
+                       help="squash each frame to imgsz x imgsz like Roboflow's 'Stretch' resize; only if training used it")
+        p.add_argument("--device", default=None, help="GPU index, 'mps' or 'cpu' (default: automatic)")
+    p.add_argument("--frames", type=int, default=10, help="number of frames to capture (default 10)")
+    sub.choices["detect"].add_argument("--no-board", action="store_true",
+                                       help="ignore config/board_pose.json (camera frame only)")
 
     args = parser.parse_args()
 
@@ -136,7 +146,14 @@ def main():
         parser.exit(1, f"'{args.command}' needs {', '.join(missing)}: a dataset-preparation module that is not "
                        "part of this checkout. Training, evaluate, test and detect work without it.\n")
 
-    if args.command == "build-rgbd":
+    if args.command == "board-print":
+        from vision_intelligence.geometry.board import render_print_files
+        for f in render_print_files():
+            print(f"Wrote {paths.to_root_relative(f)}")
+    elif args.command == "calibrate-board":
+        from vision_intelligence.geometry.board import calibrate_live
+        calibrate_live(args.frames)
+    elif args.command == "build-rgbd":
         from vision_intelligence.detection.build_rgbd_dataset import build
         build(args.dataset, args.kernel_px, args.max_height_mm, args.blur_px, args.overwrite)
     elif args.command == "pair-depth":
@@ -156,7 +173,10 @@ def main():
         predict(args.weights, args.source, args.conf, args.imgsz, args.out, args.iou, args.device, args.run)
     elif args.command == "detect":
         from vision_intelligence.detection.live import run
-        run(args.weights, args.conf, args.imgsz, args.device, args.stretch, args.run)
+        run(args.weights, args.conf, args.imgsz, args.device, args.stretch, args.run, board=not args.no_board)
+    elif args.command == "measure":
+        from vision_intelligence.detection.measure import measure
+        measure(args.weights, args.run, args.frames, args.conf, args.imgsz, args.device, args.stretch)
     elif args.command == "train":
         from vision_intelligence.detection.train import train
         if args.name and len(args.seeds) > 1:

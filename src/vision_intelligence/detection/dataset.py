@@ -185,6 +185,12 @@ def write_run_info(run_dir, **info):
     return path
 
 
+def run_info(weights):
+    """Our run_info.json of the run that produced ``weights`` (channels, rgbd_config, ...), or {}."""
+    info_file = Path(weights).resolve().parent.parent / "run_info.json"
+    return json.loads(info_file.read_text(encoding="utf-8")) if info_file.exists() else {}
+
+
 def run_args(weights):
     """
     Training settings of the run that produced ``weights``: Ultralytics' ``args.yaml``,

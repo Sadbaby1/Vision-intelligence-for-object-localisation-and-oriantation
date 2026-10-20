@@ -1,0 +1,3 @@
+run,dataset,variant,model,seed,subset,images,mAP50,mAP50-95,Air_Filter_precision,Air_Filter_recall,Air_Filter_AP50,filter_precision,filter_recall,filter_AP50,frame_precision,frame_recall,frame_AP50,inference_ms
+rgb_yolo11n-obb_s0,2026-10-16_v2,rgb,yolo11n-obb,0,test,85,0.9932,0.9843,0.9985,1.0,0.995,0.9996,1.0,0.995,0.9919,0.994,0.9895,12.1948
+rgbd_yolo11n-obb_s0,2026-10-16_v2,rgbd,yolo11n-obb,0,test,85,0.9944,0.9931,1.0,1.0,0.995,1.0,1.0,0.995,0.9857,0.994,0.9931,8.175

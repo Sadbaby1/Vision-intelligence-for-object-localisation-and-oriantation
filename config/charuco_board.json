@@ -1,0 +1,9 @@
+{
+  "dictionary": "DICT_5X5_100",
+  "squares_x": 7,
+  "squares_y": 5,
+  "square_mm": 50.0,
+  "marker_mm": 37.0,
+  "paper": "A3 landscape (420 x 297 mm), print at 100 % / actual size",
+  "note": "After printing, measure one square with a ruler. If it is not 50.0 mm, put the measured value in square_mm and marker_mm (scaled by the same factor)."
+}

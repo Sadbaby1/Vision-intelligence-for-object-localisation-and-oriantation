@@ -218,25 +218,115 @@ uv run python -m vision_intelligence test --run <dataset_id>/<run> --source path
 
 Output in `model/<dataset_id>/<run>/test_<folder>/`: one image per input (orange = filter, magenta = frame, cyan = Air_Filter, green = ground truth, red = missed), `overview.png` with all images as numbered tiles, `results.csv` (per image: correct, missed and false detections, `OK` or `CHECK`) and `predictions.json` (class, confidence, corners, approximate 3D centre, yaw). A prediction counts as correct if it has the right class and overlaps the ground truth by IoU ≥ 0.5 (`--iou`).
 
+### Thresholds
+
+All models (RGB and RGB-D) use the same thresholds, so their results are directly comparable. Which thresholds apply depends on the command.
+
+**`evaluate`** (scores in `comparison.csv`): our code sets no threshold (`model.val(...)` in `src/vision_intelligence/detection/evaluate.py`), so the Ultralytics defaults apply (version 8.4.176):
+
+| Threshold | Value | Defined in (Ultralytics) | Meaning |
+|---|---|---|---|
+| Confidence | 0.01 | `engine/validator.py`: `0.01 if task == "obb" else 0.001` | Keeps almost all predictions; mAP needs the full confidence range |
+| NMS IoU | 0.7 | `cfg/default.yaml` (`iou: 0.7`) | Overlapping boxes of the same class above IoU 0.7 are merged |
+| Match IoU, mAP50 | 0.5 | `models/yolo/detect/val.py` (`iouv`) | A box is correct if it overlaps the label by IoU ≥ 0.5 |
+| Match IoU, mAP50-95 | 0.50, 0.55, … 0.95 | same, `torch.linspace(0.5, 0.95, 10)` | Averaged over the 10 thresholds; rewards tight boxes |
+| Precision / recall | at the best-F1 confidence | `utils/metrics.py` (`f1_curve ... argmax()`) | Reported at the confidence that gives each model its highest F1, not at a fixed 0.5 |
+
+**`test`** (found / missed / false counts) and **`detect`** (live) use a fixed operating point:
+
+| Threshold | Value | Set by | Used in |
+|---|---|---|---|
+| Confidence | 0.5 | `--conf` (`src/vision_intelligence/__main__.py`) | `predict.py` and `live.py`: `model.predict(..., conf=conf)` |
+| Match IoU (`test` only) | 0.5 | `--iou` | `predict.py`, `match()`: a prediction must have the right class and IoU ≥ 0.5 with a label |
+| NMS IoU | 0.7 | Ultralytics default | |
+
+So `evaluate` describes a model over all confidence levels, while `test` and `detect` show its behaviour at confidence ≥ 0.5. To compare models at that fixed operating point, use the totals printed by `test` (and `results.csv`).
+
+## 3D localisation and orientation
+
+After detection, every part is localised from the aligned depth image and the camera intrinsics (`src/vision_intelligence/geometry/localize.py`). This needs no training: it works with any trained model, RGB or RGB-D. The detector gives a rotated box in pixels; localisation gives:
+
+| Output | Meaning |
+|---|---|
+| `xyz_mm` | 3D position of the centre of the part's **top face**, camera frame (X right, Y down, Z forward from the camera), mm |
+| `yaw_deg` | Angle of the part's long side in the image, −90° to 90° (0 = along the image x axis, positive = clockwise) |
+| `size_mm`, `size_ok` | Length × width of the box at the part's depth, and whether it matches `config/part_dimensions.json` within ±10 % (flat, or a filter on its side) |
+| `method` | How the depth was measured (see below) |
+| `xyz_board_mm`, `height_mm`, `yaw_board_deg` | Only with a calibrated board (see "Reference board"): position on the table, height above the table, yaw in the table plane |
+| `wall_height_measured_mm`, `frame_ok` | Frames only: plausibility check that the frame stands on the surface seen through its centre |
+
+How the depth of the top face is measured:
+
+| Class | Method | How |
+|---|---|---|
+| filter, Air_Filter (solid) | `box` | Robust median of the depth inside the box, shrunk at the edges so gaps and neighbouring parts do not count |
+| frame (hollow) | `hole-surface` | Surface the frame stands on, seen through its open centre, **minus the frame height** (45 mm). The ~8 mm walls are too thin and blurred in depth to measure directly (measured on the test set: 24 mm instead of 45) |
+| frame, centre without depth | `walls` | Closest wall pixels (less accurate) |
+| frame, neither | `outside-surface` | Surface around the frame minus the frame height |
+| any, no valid depth | `no-depth` | Only image values (box, yaw) |
+
+Part sizes, frame height and frame wall width (`wall_mm`, currently an estimate of 8 mm) are in `config/part_dimensions.json`; change them there after measuring.
+
 ## Live detection test
 
-Runs a trained model on the camera stream (the command prints which model it uses):
+Runs a trained model on the camera stream with 3D localisation. RGB-D models work too: the 4th channel (local height) is built from the live depth with exactly the settings stored with the model (`run_info.json` → `rgbd_config`). The command prints which model it uses.
 
 ```
-uv run python -m vision_intelligence detect                                   # latest trained run
-uv run python -m vision_intelligence detect --run <dataset_id>/<run>          # a specific run
-uv run python -m vision_intelligence detect --conf 0.3                        # also show less confident detections
-uv run python -m vision_intelligence detect --stretch                         # only if the training images were stretched to a square
+uv run python -m vision_intelligence detect                                         # latest trained run
+uv run python -m vision_intelligence detect --run 2026-10-16_v2/rgb_yolo11n-obb_s0  # RGB model
+uv run python -m vision_intelligence detect --run 2026-10-16_v2/rgbd_yolo11n-obb_s0 # RGB-D model
+uv run python -m vision_intelligence detect --conf 0.3                              # also show less confident detections
+uv run python -m vision_intelligence detect --no-board                              # camera frame only, ignore the board
+uv run python -m vision_intelligence detect --stretch                               # only if the training images were stretched to a square
 ```
 
 The camera gives 1280×720 frames. By default they are letterboxed (aspect ratio kept) to the model's training size. If the training images were made with Roboflow's "Resize: Stretch to 640x640", use `--stretch` so live frames are squashed the same way; otherwise parts look a different shape than in training.
 
 | Key | Effect |
 |---|---|
-| `s` | Save a snapshot (raw colour + annotated image) to `outputs/live/` |
+| `s` | Save a snapshot (colour, depth and annotated image) to `outputs/live/` |
 | `q` | Quit |
 
-Each detection shows class, confidence, yaw (degrees, -90 to 90, 0 = along the image x axis, positive = clockwise) and an approximate 3D centre in mm in the camera frame. The depth is taken at the box centre, so for a hollow frame it is the surface below the frame.
+Each detection shows class, confidence and yaw, `cam X Y Z` (mm, camera frame), and with a calibrated board `board X Y h` (position on the table and height above it; yaw is then measured on the table). `size ...?` means the box does not match the part size, `walls?` that a frame's walls were not found above the surface.
+
+On the test images, `test` also writes `localisation.csv` (one row per detection with all values above) next to `results.csv`.
+
+## Repeatability test
+
+With the camera and a static scene (nothing moving), localise every part over several frames and report mean ± standard deviation per part:
+
+```
+uv run python -m vision_intelligence measure --run 2026-10-16_v2/rgb_yolo11n-obb_s0              # 10 frames
+uv run python -m vision_intelligence measure --run 2026-10-16_v2/rgbd_yolo11n-obb_s0 --frames 20
+```
+
+It prints a table per part (X, Y, Z, yaw and, with a calibrated board, height) and writes `outputs/measure/<time>_parts.csv`, `<time>_frames.csv` and an image with part numbers. METHODOLOGY pass criterion: standard deviation < 3 mm. To check accuracy, place parts at positions measured with a ruler from the board origin and compare with `board X Y`.
+
+## Automatic tests
+
+```
+uv run pytest
+```
+
+Synthetic depth images with known geometry test local height, the depth helper, deprojection, the localisation methods (solid part, hollow frame, covered frame centre, no depth), the size check, yaw, the board frame and the repeatability statistics. The `tests/` folder is a development tool and is not included in the git repository; it exists only in the developer's copy.
+
+## Reference board (ChArUco)
+
+A ChArUco board fixed on the table gives a reference frame that does not change when the camera is moved: part positions can be reported relative to the board (X, Y on the table, height above the table) in addition to the camera frame.
+
+1. **Print** `config/charuco_7x5_50mm_A3.pdf` on A3 at **100 % / actual size** (no "fit to page"). Check with a ruler: the black bar must be 100 mm and one square 50 mm. If not, write the measured square size into `config/charuco_board.json` (`square_mm`, and scale `marker_mm` by the same factor). Regenerate the print files with `uv run python -m vision_intelligence board-print`.
+2. **Place** it flat (taped, no bends or glare) on the table, in a corner of the camera view where parts will not cover it.
+3. **Calibrate** once per camera setup, with the whole board visible and the camera still:
+
+   ```
+   uv run python -m vision_intelligence calibrate-board
+   ```
+
+   It averages 30 good detections and saves the camera-to-board pose in `config/board_pose.json` (local to this setup, not in git). Repeat it whenever the camera or the board is moved.
+
+Board frame: origin at the board's top-left outer corner (marked "origin (0,0)" on the print), X along the long edge, Y along the short edge, Z into the table, so height above the table is −Z. Board definition: `DICT_5X5_100`, 7 × 5 squares of 50 mm, markers 37 mm, 350 × 250 mm. Without a calibrated board everything still works in the camera frame.
+
+Part sizes used for localisation and size checks are in `config/part_dimensions.json`.
 
 ## Troubleshooting
 

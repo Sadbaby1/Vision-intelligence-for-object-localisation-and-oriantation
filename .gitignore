@@ -21,10 +21,21 @@ outputs/
 # Data: raw captures, Roboflow exports and prepared datasets are too large for git
 /data/
 
-# Local notes and checks
+# Camera -> board pose: measured per camera setup with `calibrate-board`
+/config/board_pose.json
+
+# Local notes, checks and developer tests (not needed to use the trained models)
 METHODOLOGY.md
 /data_check/
 /experiments/
+/tests/
+
+# ChArUco board: only the PDF is needed for printing (true A3 scale); the PNG is a copy
+/config/charuco_*.png
+
+# Empty placeholder modules
+src/vision_intelligence/detection/detector.py
+src/vision_intelligence/detection/detected_object.py
 
 # Dataset-preparation tools: only needed where the raw captures are (not for training,
 # evaluating, testing or live detection with the trained models)

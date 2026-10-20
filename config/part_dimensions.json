@@ -1,0 +1,8 @@
+{
+  "unit": "mm",
+  "Air_Filter": {"class_id": 0, "length": 435, "width": 115, "height": 45, "hollow": false,
+                 "note": "assembled product: filter inside a frame, same outer size as the frame"},
+  "filter": {"class_id": 1, "length": 420, "width": 95, "height": 40, "hollow": false},
+  "frame": {"class_id": 2, "length": 435, "width": 115, "height": 45, "hollow": true, "wall_mm": 8,
+            "note": "thin walls, open centre: depth is measured on the walls. wall_mm (rim width seen from above) is an estimate of 7-8 mm, to be measured"}
+}
