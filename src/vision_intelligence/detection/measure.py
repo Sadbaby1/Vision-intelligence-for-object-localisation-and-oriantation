@@ -22,7 +22,7 @@ MATCH_PX = 40  # a detection belongs to a part if its centre is within this dist
 VALUES = [("x_mm", lambda d: d["xyz_mm"][0]), ("y_mm", lambda d: d["xyz_mm"][1]), ("z_mm", lambda d: d["xyz_mm"][2]),
           ("length_mm", lambda d: d["size_mm"][0]), ("width_mm", lambda d: d["size_mm"][1]),
           ("board_x_mm", lambda d: d["xyz_board_mm"][0]), ("board_y_mm", lambda d: d["xyz_board_mm"][1]),
-          ("height_mm", lambda d: d["height_mm"])]
+          ("height_mm", lambda d: d["height_mm"]), ("height_charuco_mm", lambda d: d["height_charuco_mm"])]
 
 
 def circular_stats_180(degrees):
@@ -110,7 +110,7 @@ def measure(weights=None, run_name=None, n_frames=10, conf=0.5, imgsz=None, devi
             for d in dets:
                 writer.writerow([i, d["class"], round(d["confidence"], 3), d["method"],
                                  *(d["xyz_mm"] or (None, None, None)), round(d["yaw_deg"], 1), d.get("size_ok")])
-    image = draw(last_color.copy(), frames[-1])
+    image = draw(last_color.copy(), frames[-1], detector.variant)
     for i, p in enumerate(parts):
         cv.putText(image, f"#{i + 1}", p["center"], cv.FONT_HERSHEY_SIMPLEX, 1.2, (0, 0, 0), 6)
         cv.putText(image, f"#{i + 1}", p["center"], cv.FONT_HERSHEY_SIMPLEX, 1.2, (255, 255, 255), 2)

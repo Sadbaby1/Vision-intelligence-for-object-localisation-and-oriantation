@@ -101,15 +101,93 @@ def detect_pose(image, intrinsics, spec=None, dist=None):
     return {"rvec": rvec.ravel(), "tvec": tvec.ravel(), "corners": int(len(ids)), "reprojection_px": error}
 
 
-def save_pose(pose, intrinsics, path=BOARD_POSE, frames=1):
+# ---------------------------------------------------------------- board plane from the depth sensor
+#
+# The ChArUco pose comes from the colour image; part depths come from the depth sensor. A constant
+# depth-sensor offset (typically 1-3 % at 1 m) would then appear as an error in "height above the
+# board". Measuring the board plane with the depth sensor as well makes the height a difference
+# of two depth measurements, so such an offset cancels.
+
+def board_region(shape, intrinsics, R, t, spec=None, inset_mm=15.0):
+    """Mask of the board area in the image (the printed board, shrunk by ``inset_mm``)."""
+    spec = spec or load_spec()
+    w, h = spec["squares_x"] * spec["square_mm"], spec["squares_y"] * spec["square_mm"]
+    corners = np.array([[inset_mm, inset_mm, 0], [w - inset_mm, inset_mm, 0],
+                        [w - inset_mm, h - inset_mm, 0], [inset_mm, h - inset_mm, 0]], float)
+    pts, _ = cv.projectPoints(corners, cv.Rodrigues(R)[0], t, camera_matrix(intrinsics), np.zeros(5))
+    mask = np.zeros(shape, np.uint8)
+    cv.fillPoly(mask, [np.round(pts.reshape(-1, 2)).astype(np.int32)], 1)
+    return mask
+
+
+def _points_from_depth(depth_mm, intrinsics, mask, step=3):
+    v, u = np.nonzero(mask[::step, ::step])
+    v, u = v * step, u * step
+    z = depth_mm[v, u].astype(float)
+    ok = z > 0
+    u, v, z = u[ok], v[ok], z[ok]
+    return np.c_[(u - intrinsics.cx) * z / intrinsics.fx, (v - intrinsics.cy) * z / intrinsics.fy, z]
+
+
+def fit_plane(points, inlier_mm=5.0):
+    """Least-squares plane n.p = d (unit n pointing away from the camera) with one outlier-rejection pass."""
+    def fit(p):
+        c = p.mean(axis=0)
+        n = np.linalg.svd(p - c, full_matrices=False)[2][-1]
+        n = -n if n[2] < 0 else n
+        return n, float(n @ c)
+
+    n, d = fit(points)
+    inliers = points[np.abs(points @ n - d) < inlier_mm]
+    if len(inliers) >= 50:
+        n, d = fit(inliers)
+    rms = float(np.sqrt(np.mean((inliers @ n - d) ** 2))) if len(inliers) else float("nan")
+    return n, d, rms, int(len(inliers))
+
+
+def pnp_plane(R, t):
+    """Board plane from the ChArUco pose, as n.p = d with n pointing away from the camera."""
+    n = R[:, 2] if R[2, 2] > 0 else -R[:, 2]
+    return n, float(n @ t)
+
+
+def depth_minus_pnp_mm(depth_mm, intrinsics, mask, R, t):
+    """Median of (measured depth - depth predicted by the ChArUco pose) over the board area, in mm."""
+    n, d = pnp_plane(R, t)
+    v, u = np.nonzero(mask)
+    z = depth_mm[v, u].astype(float)
+    ok = z > 0
+    rays = np.c_[(u[ok] - intrinsics.cx) / intrinsics.fx, (v[ok] - intrinsics.cy) / intrinsics.fy, np.ones(ok.sum())]
+    z_pred = d / (rays @ n)  # ray-plane intersection, z component of the ray is 1
+    return float(np.median(z[ok] - z_pred))
+
+
+def height_above_plane(points_mm, plane):
+    """Height (mm) of camera-frame points above a plane n.p = d (n away from the camera)."""
+    n, d = plane
+    return d - np.atleast_2d(np.asarray(points_mm, float)) @ np.asarray(n, float)
+
+
+def save_pose(pose, intrinsics, path=BOARD_POSE, frames=1, depth_plane=None):
     data = {
         "rvec": [float(v) for v in pose["rvec"]], "tvec_mm": [float(v) for v in pose["tvec"]],
         "corners": pose["corners"], "reprojection_px": round(pose["reprojection_px"], 3), "frames_used": frames,
         "intrinsics": {k: getattr(intrinsics, k) for k in ("fx", "fy", "cx", "cy", "width", "height")},
         "board": load_spec(), "created": datetime.now().isoformat(timespec="seconds"),
     }
+    if depth_plane:
+        data["depth_plane"] = depth_plane
     Path(path).write_text(json.dumps(data, indent=2), encoding="utf-8")
     return Path(path)
+
+
+def load_depth_plane(path=BOARD_POSE):
+    """(n, d) of the board plane measured by the depth sensor, or None (older calibration / no board)."""
+    path = Path(path)
+    if not path.exists():
+        return None
+    plane = json.loads(path.read_text(encoding="utf-8")).get("depth_plane")
+    return (np.array(plane["normal"], float), float(plane["d_mm"])) if plane else None
 
 
 def load_pose(path=BOARD_POSE):
@@ -125,8 +203,9 @@ def load_pose(path=BOARD_POSE):
 def calibrate_live(n_frames=30, max_reprojection_px=1.0, timeout_s=60):
     """
     Measure the camera -> board pose with the Orbbec camera: collect ``n_frames`` good board
-    detections, take the median pose, save it to config/board_pose.json. The board must be
-    fully visible and the camera still. Press 'q' to cancel.
+    detections, take the median pose, and also fit the board plane in the depth image of the
+    same frames; save both to config/board_pose.json. The board must be fully visible and the
+    camera still. Press 'q' to cancel.
     """
     import time
 
@@ -135,7 +214,7 @@ def calibrate_live(n_frames=30, max_reprojection_px=1.0, timeout_s=60):
 
     spec = load_spec()
     detector = cv.aruco.CharucoDetector(make_board(spec))
-    poses, camera = [], None
+    poses, planes, offsets, camera = [], [], [], None
     try:
         camera = Camera()
         camera.start()
@@ -144,14 +223,22 @@ def calibrate_live(n_frames=30, max_reprojection_px=1.0, timeout_s=60):
             result = camera.get_frames()
             if result is None:
                 continue
-            color, _ = result
+            color, depth_mm = result
             pose = detect_pose(color, camera.intrinsics, spec)
             if pose and pose["reprojection_px"] <= max_reprojection_px:
                 poses.append(pose)
+                # the same board, measured by the depth sensor
+                R = cv.Rodrigues(pose["rvec"])[0]
+                mask = board_region(depth_mm.shape, camera.intrinsics, R, pose["tvec"], spec)
+                pts = _points_from_depth(depth_mm, camera.intrinsics, mask)
+                if len(pts) >= 200:
+                    planes.append(fit_plane(pts))
+                    offsets.append(depth_minus_pnp_mm(depth_mm, camera.intrinsics, mask, R, pose["tvec"]))
             view = color.copy()
             corners, ids, _, _ = detector.detectBoard(cv.cvtColor(color, cv.COLOR_BGR2GRAY))
-            if ids is not None:
-                cv.aruco.drawDetectedCornersCharuco(view, corners, ids, (0, 255, 0))
+            if ids is not None and len(ids):
+                # OpenCV 5 returns (N, 2) corners and (N,) ids; the drawing function needs (N, 1, 2) and (N, 1)
+                cv.aruco.drawDetectedCornersCharuco(view, corners.reshape(-1, 1, 2), ids.reshape(-1, 1), (0, 255, 0))
             status = (f"corners {pose['corners']}, reprojection {pose['reprojection_px']:.2f}px" if pose
                       else "board not found")
             put_text_lines(view, [f"board calibration: {len(poses)}/{n_frames} good frames", status, "q = cancel"])
@@ -173,11 +260,27 @@ def calibrate_live(n_frames=30, max_reprojection_px=1.0, timeout_s=60):
     best = dict(min(poses, key=lambda p: p["reprojection_px"]))
     best["tvec"] = np.median(tvecs, axis=0)
     best["rvec"] = np.median(np.array([p["rvec"] for p in poses]), axis=0)
-    path = save_pose(best, intrinsics, frames=len(poses))
+    depth_plane = None
+    if planes:
+        n = np.median(np.array([p[0] for p in planes]), axis=0)
+        depth_plane = {"normal": [float(v) for v in n / np.linalg.norm(n)],
+                       "d_mm": float(np.median([p[1] for p in planes])),
+                       "rms_mm": round(float(np.median([p[2] for p in planes])), 2),
+                       "points_per_frame": int(np.median([p[3] for p in planes])),
+                       "depth_minus_charuco_mm": round(float(np.median(offsets)), 1), "frames": len(planes)}
+    path = save_pose(best, intrinsics, frames=len(poses), depth_plane=depth_plane)
     spread = tvecs.std(axis=0)
     print(f"Saved {paths.to_root_relative(path)}: {len(poses)} frames, board origin at "
           f"{np.round(best['tvec']).astype(int)} mm from the camera, frame-to-frame spread "
           f"{np.round(spread, 1)} mm (x, y, z)")
+    if depth_plane:
+        off = depth_plane["depth_minus_charuco_mm"]
+        print(f"Depth sensor vs ChArUco: the depth sensor measures the board {abs(off):.1f} mm "
+              f"{'farther' if off > 0 else 'closer'} than the ChArUco pose (board flatness in depth: "
+              f"{depth_plane['rms_mm']} mm rms). Heights above the board now use the depth-measured "
+              "board plane, so this offset cancels out.")
+    else:
+        print("WARNING: no valid depth on the board; heights fall back to the ChArUco plane")
     return path
 
 

@@ -29,7 +29,7 @@ import cv2 as cv
 import numpy as np
 
 from vision_intelligence import paths
-from vision_intelligence.geometry.board import camera_to_board
+from vision_intelligence.geometry.board import camera_to_board, height_above_plane
 
 SIZE_TOLERANCE = 0.10        # relative deviation from the part length/width that is still "size ok"
 EDGE_MARGIN = 0.08           # box shrink, as a share of the box's narrow side (min 2 px)
@@ -166,10 +166,13 @@ def size_check(corners, z, intrinsics, part, tol=SIZE_TOLERANCE):
     return round(float(length), 1), round(float(width), 1), all(abs(e) <= tol for e in best), best
 
 
-def localize(cls, confidence, corners, depth_mm, intrinsics, parts, board_pose=None):
+def localize(cls, confidence, corners, depth_mm, intrinsics, parts, board_pose=None, depth_plane=None):
     """
     One detection -> dict with class, confidence, corners, centre_px, yaw, and (when depth is
     usable) xyz_mm, size check and, with a board pose, board-frame position, height and yaw.
+    ``depth_plane`` (n, d): the board plane measured by the depth sensor at calibration. If
+    given, the height above the board is measured against it, so a constant depth-sensor offset
+    cancels; ``height_charuco_mm`` keeps the height against the ChArUco plane for comparison.
     """
     corners = np.asarray(corners, np.float32)
     u, v = (float(c) for c in corners.mean(axis=0))
@@ -202,19 +205,23 @@ def localize(cls, confidence, corners, depth_mm, intrinsics, parts, board_pose=N
             ((corners[0] + corners[1]) / 2, (corners[2] + corners[3]) / 2)
         ends = camera_to_board(np.array([deproject(*a, z, intrinsics), deproject(*b, z, intrinsics)]), board_pose)
         d = ends[1] - ends[0]
+        height_charuco = float(-p_board[2])
+        height = float(height_above_plane(xyz, depth_plane)[0]) if depth_plane is not None else height_charuco
         out.update(xyz_board_mm=tuple(round(float(c), 1) for c in p_board),
-                   height_mm=round(float(-p_board[2]), 1),
+                   height_mm=round(height, 1), height_charuco_mm=round(height_charuco, 1),
+                   height_reference="depth-plane" if depth_plane is not None else "charuco",
                    yaw_board_deg=round(_fold(np.degrees(np.arctan2(d[1], d[0]))), 1))
     return out
 
 
-def localize_result(result, depth_mm, intrinsics, parts, board_pose=None, scale=(1.0, 1.0)):
+def localize_result(result, depth_mm, intrinsics, parts, board_pose=None, scale=(1.0, 1.0), depth_plane=None):
     """All detections of one Ultralytics OBB result. ``scale`` maps corners back to the original image."""
     obb = result.obb
     if obb is None:
         return []
     names = result.names
     return [
-        localize(names[int(c)], conf, corners * np.asarray(scale, np.float32), depth_mm, intrinsics, parts, board_pose)
+        localize(names[int(c)], conf, corners * np.asarray(scale, np.float32), depth_mm, intrinsics, parts,
+                 board_pose, depth_plane)
         for corners, c, conf in zip(obb.xyxyxyxy.cpu().numpy(), obb.cls.cpu().numpy(), obb.conf.cpu().numpy())
     ]

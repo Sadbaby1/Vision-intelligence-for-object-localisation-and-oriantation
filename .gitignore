@@ -58,3 +58,6 @@ src/vision_intelligence/detection/build_rgbd_dataset.py
 !/model/*/*/args.yaml
 !/model/*/*/results.csv
 !/model/*/*/weights/best.pt
+
+# Recorded videos: Only need for testing live detection with the trained models, not for training
+recording/

@@ -216,7 +216,7 @@ uv run python -m vision_intelligence test --run <dataset_id>/<run>            # 
 uv run python -m vision_intelligence test --run <dataset_id>/<run> --source path/to/new/images --conf 0.3
 ```
 
-Output in `model/<dataset_id>/<run>/test_<folder>/`: one image per input (orange = filter, magenta = frame, cyan = Air_Filter, green = ground truth, red = missed), `overview.png` with all images as numbered tiles, `results.csv` (per image: correct, missed and false detections, `OK` or `CHECK`) and `predictions.json` (class, confidence, corners, approximate 3D centre, yaw). A prediction counts as correct if it has the right class and overlaps the ground truth by IoU ≥ 0.5 (`--iou`).
+Output in `model/<dataset_id>/<run>/test_<folder>/`: one image per input (box colours per class and model type, see "Live detection test"; green = ground truth, red = missed), `overview.png` with all images as numbered tiles, `results.csv` (per image: correct, missed and false detections, `OK` or `CHECK`) and `predictions.json` (class, confidence, corners, approximate 3D centre, yaw). A prediction counts as correct if it has the right class and overlaps the ground truth by IoU ≥ 0.5 (`--iou`).
 
 ### Thresholds
 
@@ -284,10 +284,21 @@ The camera gives 1280×720 frames. By default they are letterboxed (aspect ratio
 
 | Key | Effect |
 |---|---|
+| `l` | Labels: full → short (class + height, or Z without a board) → off. Use short/off when narrow parts stand close together |
 | `s` | Save a snapshot (colour, depth and annotated image) to `outputs/live/` |
 | `q` | Quit |
 
-Each detection shows class, confidence and yaw, `cam X Y Z` (mm, camera frame), and with a calibrated board `board X Y h` (position on the table and height above it; yaw is then measured on the table). `size ...?` means the box does not match the part size, `walls?` that a frame's walls were not found above the surface.
+Each detection shows class, confidence and yaw, `cam X Y Z` (mm, camera frame), and with a calibrated board `board X Y h` (position on the table and height above it; yaw is then measured on the table). `size ...?` means the box does not match the part size, `walls?` that a frame's walls were not found above the surface. The values are written as white text on a black label at the part's centre point (the dot), with a border in the class colour. The top line says whether an RGB or an RGB-D model is running.
+
+Box colours per model type, so recordings of the two models are easy to tell apart:
+
+| Class | RGB model | RGB-D model |
+|---|---|---|
+| filter | orange | yellow |
+| frame | magenta | blue |
+| Air_Filter | cyan | violet |
+
+Green (ground truth) and red (missed) are only used by `test`.
 
 On the test images, `test` also writes `localisation.csv` (one row per detection with all values above) next to `results.csv`.
 
@@ -323,6 +334,8 @@ A ChArUco board fixed on the table gives a reference frame that does not change 
    ```
 
    It averages 30 good detections and saves the camera-to-board pose in `config/board_pose.json` (local to this setup, not in git). Repeat it whenever the camera or the board is moved.
+
+   It also measures the board plane **with the depth sensor** in the same frames and prints how far the depth sensor and the ChArUco pose disagree (`Depth sensor vs ChArUco: ... mm`). The board pose comes from the colour image, part depths from the depth sensor; a constant depth-sensor offset (typically 1–3 % at 1 m, i.e. 10–30 mm) would otherwise show up as an error in the height above the board. **Height above the board (`h`) is therefore measured against the depth-sensor board plane**, so that offset cancels; board X and Y come from the ChArUco pose. `localisation.csv` and `measure` also report `height_charuco_mm` (height against the ChArUco plane) for comparison. Calibrations made before this feature have no depth plane: run `calibrate-board` again.
 
 Board frame: origin at the board's top-left outer corner (marked "origin (0,0)" on the print), X along the long edge, Y along the short edge, Z into the table, so height above the table is −Z. Board definition: `DICT_5X5_100`, 7 × 5 squares of 50 mm, markers 37 mm, 350 × 250 mm. Without a calibrated board everything still works in the camera frame.
 

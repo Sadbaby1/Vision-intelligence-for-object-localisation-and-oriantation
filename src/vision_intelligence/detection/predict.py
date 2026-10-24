@@ -131,7 +131,7 @@ def _output_dir(weights, source):
 
 LOCALISATION_COLUMNS = ["image", "class", "confidence", "method", "valid_depth", "x_mm", "y_mm", "z_mm",
                         "length_mm", "width_mm", "size_ok", "wall_height_measured_mm", "frame_ok", "yaw_deg",
-                        "board_x_mm", "board_y_mm", "height_mm", "yaw_board_deg"]
+                        "board_x_mm", "board_y_mm", "height_mm", "height_charuco_mm", "yaw_board_deg"]
 
 
 def _localisation_row(image_name, d):
@@ -143,7 +143,8 @@ def _localisation_row(image_name, d):
             "length_mm": size[0], "width_mm": size[1], "size_ok": d.get("size_ok"),
             "wall_height_measured_mm": d.get("wall_height_measured_mm"), "frame_ok": d.get("frame_ok"),
             "yaw_deg": round(d["yaw_deg"], 1), "board_x_mm": bxyz[0], "board_y_mm": bxyz[1],
-            "height_mm": d.get("height_mm"), "yaw_board_deg": d.get("yaw_board_deg")}
+            "height_mm": d.get("height_mm"), "height_charuco_mm": d.get("height_charuco_mm"),
+            "yaw_board_deg": d.get("yaw_board_deg")}
 
 
 def _json_ready(d):
@@ -191,7 +192,7 @@ def run(weights=None, source=None, conf=0.5, imgsz=None, out=None, iou_thresh=0.
         if gt is not None:
             for _, corners in gt:
                 cv.polylines(annotated, [corners.astype(np.int32)], True, GT_COLOR, 2)
-        annotated = draw(annotated, dets)
+        annotated = draw(annotated, dets, detector.variant)
 
         row = {"tile": number, "image": image_path.name}
         row.update({f"pred_{n}": sum(d["class"] == n for d in dets) for n in names.values()})
